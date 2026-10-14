@@ -1,8 +1,14 @@
 # built by make
-/bin/
+rasp/bin/
 *.yy.c
 *.o
 *.a
 *.fasl
-/tag/auxiliary_files/seclarge-c2s.lex
+rasp/tag/auxiliary_files/seclarge-c2s.lex
+browsered/Browsered.app/
+browsered/windows/stage/
+browsered/windows/build/
+qprolog/bench/out/
+# written for git/gitpush.sh, not part of the repository
+git/next-commit.txt
 .DS_Store

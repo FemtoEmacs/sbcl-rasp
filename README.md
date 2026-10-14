@@ -1,83 +1,44 @@
 # sbcl-rasp
 
-RASP (Robust Accurate Statistical Parsing) is a parser for English by Ted
-Briscoe, John Carroll and colleagues at the Universities of Cambridge and
-Sussex [1, 2]. It splits text into sentences and words, tags each word with
-its part of speech, reduces it to its root, and parses the sequence of tags
-with a grammar, returning parse trees and grammatical relations (subject,
-object, modifier, ...).
+Doctors will use generative AI whether or not it is reliable. sbcl-rasp
+gathers the tools a person needs to keep a human in the loop: a parser that
+checks English written by people and by AI, an editor to read and correct
+it, and a logic engine to reason about it. Everything builds with SBCL, a C
+compiler and make, and nothing else.
 
-sbcl-rasp is RASP 3.3a ported to SBCL and repaired, as part of a project
-that uses RASP to check English written by people and by generative AI. The
-original only ran on Clozure Common Lisp for Intel processors; this version
-runs natively on Apple Silicon and on Linux.
+Components are added as the project needs them:
 
-## Build
+| Folder        | What it is                                                     |
+|---------------|----------------------------------------------------------------|
+| `rasp/`       | RASP 3.3a, the English parser, ported to SBCL and repaired     |
+| `browsered/`  | Browsered, an Emacs-like editor that runs in Chrome or Edge     |
+| `qprolog/`    | qprolog, a Prolog written in SBCL                              |
 
-You need SBCL, a C compiler and make. Nothing else: flex comes with the
-sources and is built once.
+## Build and test
 
 ```sh
 git clone https://github.com/FemtoEmacs/sbcl-rasp
 cd sbcl-rasp
-make            # about two minutes; everything goes to bin/<arch>/
-make check      # about a minute
+make            # about two minutes
+make check      # about two minutes
 ```
+
+`make` builds RASP and, on macOS, the Browsered helper. qprolog needs no
+build. On Linux and Windows, open `browsered/Browsered.html` in Chrome or
+Edge.
 
 ## Use
 
 ```sh
-echo "This sentence have a mistake. These tools helps me write." | scripts/rasp.sh
+echo "This sentence have a mistake." | rasp/scripts/rasp.sh
+cd qprolog && ./qp bench/programs/tak.lisp '(tak 18 12 6 ?a)'
 ```
 
-Each sentence comes out as its words, the number of complete parses and
-their scores, and the grammatical relations of the best parse. A sentence
-outside the grammar gets 0 parses and the fragments RASP found. Options of
-`scripts/rasp.sh`: `-p "-n 5"` for the five best parses, `-p "-o t"` for the
-tree, `-1` for one tag per word (the original default).
+Each folder has its own README.
 
-## What changed
+## Licences
 
-`CHANGES.md` explains each change and the sentences it fixes; every change to
-the original files is in `docs/changes-from-rasp-3.3a.patch`. In short:
-
-- the parser builds and runs on SBCL, with analyses identical to the original
-  on the 560 DepBank test sentences;
-- the tokeniser no longer splits numbers into digits ("1990" became
-  "1 9 9 0"), and the sentence splitter no longer cuts DOIs;
-- the tagger passes several tags per word to the parser, and knows a few more
-  words;
-- RASP rejects doubled function words ("evaluated for for reproducibility")
-  and function words read as names ("an of antigen presentation"), which the
-  original accepted;
-- no Berkeley DB, no Python: SBCL, a C compiler and make are enough.
-
-## Tests
-
-`make check` runs `tests/check.lisp`:
-
-1. all sentences in `tests/codex-correct.txt` and
-   `tests/constructed-correct.txt` must parse;
-2. the sentences of `tests/known-bad.txt` must be rejected, except the open
-   problems listed in `tests/known-bad-open.txt`;
-3. the parser's analyses of the 560 DepBank sentences must be identical to
-   those of the original RASP 3.3a.
-
-A change to RASP is accepted only when all three pass.
-
-## Licence and credits
-
-RASP is free software under the GNU Lesser General Public License, version 3
-or later (`COPYING`, `COPYING.LESSER`); the changes are under the same
-licence. RASP is by Ted Briscoe, John Carroll, Rebecca Watson, Øistein
-Andersen and colleagues; see `README.rasp-3.3a`. flex
-(`third_party/flex-2.6.4.tar.gz`) is distributed under its own BSD-style
-licence, included in the archive.
-
-[1] Briscoe T, Carroll J, Watson R. The second release of the RASP system.
-*Proceedings of the COLING/ACL 2006 Interactive Presentation Sessions*,
-77–80. doi:10.3115/1225403.1225423.
-
-[2] Briscoe T. An introduction to tag sequence grammars and the RASP system
-parser. Technical Report UCAM-CL-TR-662, University of Cambridge Computer
-Laboratory, 2006.
+RASP is under the GNU Lesser General Public License (`rasp/COPYING`,
+`rasp/COPYING.LESSER`). FemtoScheme, inside Browsered, is under a BSD
+licence (`browsered/femtoscheme/LICENSE`). flex, used to build RASP, is under
+its own BSD-style licence, included in `rasp/third_party/`.

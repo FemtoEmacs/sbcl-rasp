@@ -1,0 +1,16 @@
+program,time,gc
+boyer,0.519,0.032
+browse,0.482,0.000
+chat_parser,0.402,0.000
+crypt,1.253,0.000
+derive,0.573,0.000
+det,0.785,0.000
+divide10,0.574,0.000
+fast_mu,0.690,0.000
+reducer,0.494,0.000
+sendmore,0.690,0.000
+serialize,0.434,0.000
+sieve,0.539,0.000
+simple_analyzer,0.454,0.000
+tak,0.571,0.000
+zebra,0.534,0.000
