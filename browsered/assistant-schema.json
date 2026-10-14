@@ -1,9 +1,10 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["reply", "artifacts"],
+  "required": ["reply", "buffer", "artifacts"],
   "properties": {
     "reply": {"type": "string"},
+    "buffer": {"type": ["string", "null"]},
     "artifacts": {
       "type": "array",
       "items": {

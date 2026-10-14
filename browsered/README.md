@@ -22,3 +22,28 @@ a751c12. Changing the editor itself (its C interpreter, the build of
 
 femtoscheme derives from femtolisp by Jeff Bezanson (BSD licence,
 `femtoscheme/LICENSE`).
+
+## The autoclave (proof of concept, macOS)
+
+Browsered can test another medical AI, NAIA, and check its answers.
+
+1. Ask Claude for a test, naming the source: *Create a test about the
+   contents of https://...pdf*. Browsered downloads the source (or reads a
+   file you name, such as `~/Downloads/paper.pdf`), extracts its text, and
+   Claude writes the test into the buffer: questions `Q1:`, expected answers
+   `KEY1:` with a quotation from the source, and empty `NAIA1:` lines.
+2. Open NAIA (naia.med.br/app) in Chrome and press **NAIA**. Browsered types
+   each question into NAIA's page and writes NAIA's answer after `NAIAn:`.
+   Chrome must allow it once: View › Developer › Allow JavaScript from Apple
+   Events; macOS asks once whether Browsered may control Chrome.
+3. Press **Autoclave**. Every quotation in the KEY and NAIA lines is searched
+   for in the source text, letter by letter, with no AI involved; the report
+   goes at the end of the buffer, and quotations not found in the source are
+   marked.
+4. Ask Claude to score the answers; it adds a `SCOREn:` line after each.
+
+Every change to the buffer can be undone with Ctrl+/.
+
+## Aviso
+
+Isto não é um produto e deve ser usado apenas para testar o software, Claude Code, Codex, OpenEvidence e os algoritmos. Se alguém quiser desenvolver o produto para venda, distribuição ou uso próprio, sinta-se à vontade para fazê-lo.

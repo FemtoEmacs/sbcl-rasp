@@ -25,6 +25,8 @@ extern char **environ;
 CFDataRef browsered_create_pdf(const char *, size_t, const char *);
 char *browsered_run_assistant(const char *, size_t, const char *);
 char *browsered_run_claude(const char *, size_t);
+char *browsered_ask_naia(const char *, size_t);
+char *browsered_autoclave(const char *, size_t);
 #define PORT 8766
 #define EDITOR_URL "http://127.0.0.1:8766/"
 
@@ -123,6 +125,22 @@ static void serve_action(int client, const char *url, const char *request,
             output_length = strlen(answer);
             content_type = "application/json; charset=utf-8";
         }
+    } else if (strcmp(url, "/naia") == 0) {
+        /* One question to NAIA in its Chrome tab; {"answer"} or {"error"}. */
+        answer = browsered_ask_naia(body, length);
+        if (answer) {
+            bytes = (const unsigned char *)answer;
+            output_length = strlen(answer);
+            content_type = "application/json; charset=utf-8";
+        }
+    } else if (strcmp(url, "/autoclave") == 0) {
+        /* The mechanical quote check of an autoclave test: a plain-text report. */
+        answer = browsered_autoclave(body, length);
+        if (answer) {
+            bytes = (const unsigned char *)answer;
+            output_length = strlen(answer);
+            content_type = "text/plain; charset=utf-8";
+        }
     } else if (strcmp(url, "/pdf") == 0) {
         char rules_path[PATH_MAX];
         snprintf(rules_path, sizeof(rules_path), "%s/../../../formatting.xml", resources);
@@ -176,7 +194,8 @@ static void serve_request(int client, const char *resources)
     }
     if (strcmp(method, "POST") == 0 &&
         (strcmp(url, "/assistant") == 0 || strcmp(url, "/claude") == 0 ||
-         strcmp(url, "/pdf") == 0)) {
+         strcmp(url, "/pdf") == 0 || strcmp(url, "/naia") == 0 ||
+         strcmp(url, "/autoclave") == 0)) {
         serve_action(client, url, request, used, resources);
         return;
     }
@@ -275,6 +294,40 @@ static int serve_forever(int listener, const char *resources)
     }
 }
 
+/* The lock file records the helper that holds it: its process id, then the
+ * modification time and path of the program it runs. */
+static void record_helper(int lock, pid_t helper, const char *identity)
+{
+    char line[PATH_MAX + 64];
+    int length = snprintf(line, sizeof(line), "%ld %s\n", (long)helper, identity);
+    if (length > 0 && (size_t)length < sizeof(line) && ftruncate(lock, 0) == 0) {
+        if (pwrite(lock, line, (size_t)length, 0) != (ssize_t)length) (void)ftruncate(lock, 0);
+    }
+}
+
+/* A helper started by another build of Browsered (an older one, or the copy
+ * in another folder) would keep serving its own files. Stop it and take the
+ * lock. Returns false when the running helper is this build, or cannot be
+ * replaced; the caller then reuses it. */
+static bool replace_other_helper(int lock, const char *identity)
+{
+    char line[PATH_MAX + 64];
+    ssize_t length = pread(lock, line, sizeof(line) - 1, 0);
+    if (length <= 0) return false;
+    line[length] = '\0';
+    char *newline = strchr(line, '\n');
+    if (newline) *newline = '\0';
+    char *space = strchr(line, ' ');
+    if (!space || strcmp(space + 1, identity) == 0) return false;
+    long helper = strtol(line, NULL, 10);
+    if (helper <= 1 || kill((pid_t)helper, SIGTERM) != 0) return false;
+    for (int attempt = 0; attempt < 50; ++attempt) {   /* up to 5 seconds */
+        if (flock(lock, LOCK_EX | LOCK_NB) == 0) return true;
+        usleep(100000);
+    }
+    return false;
+}
+
 static void open_editor(void)
 {
     char *arguments[] = {"/usr/bin/open", "-a", "Google Chrome", EDITOR_URL, NULL};
@@ -290,6 +343,10 @@ int main(int argc, char **argv)
     char executable[PATH_MAX], resolved[PATH_MAX], resources[PATH_MAX];
     uint32_t capacity = sizeof(executable);
     if (_NSGetExecutablePath(executable, &capacity) != 0 || !realpath(executable, resolved)) return 1;
+    struct stat program;
+    char identity[PATH_MAX + 32];
+    if (stat(resolved, &program) != 0) return 1;
+    snprintf(identity, sizeof(identity), "%lld %s", (long long)program.st_mtime, resolved);
     char *separator = strrchr(resolved, '/');
     if (!separator) return 1;
     *separator = '\0';
@@ -301,7 +358,7 @@ int main(int argc, char **argv)
     snprintf(lock_path, sizeof(lock_path), "/tmp/browsered-%u.lock", (unsigned)getuid());
     int lock = open(lock_path, O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
     if (lock < 0) return 1;
-    if (flock(lock, LOCK_EX | LOCK_NB) < 0) {
+    if (flock(lock, LOCK_EX | LOCK_NB) < 0 && !replace_other_helper(lock, identity)) {
         close(lock);
         if (argc == 1) open_editor();
         return 0;
@@ -314,6 +371,7 @@ int main(int argc, char **argv)
         return 1;
     }
     if (argc > 1 && strcmp(argv[1], "--serve") == 0) {
+        record_helper(lock, getpid(), identity);
         return serve_forever(listener, resources);
     }
 
@@ -331,6 +389,7 @@ int main(int argc, char **argv)
         }
         return serve_forever(listener, resources);
     }
+    record_helper(lock, helper, identity);
     close(listener);
     close(lock);
     open_editor();

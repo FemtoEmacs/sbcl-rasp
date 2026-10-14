@@ -12,3 +12,5 @@ qprolog/bench/out/
 # written for git/gitpush.sh, not part of the repository
 git/next-commit.txt
 .DS_Store
+# backups of edited files
+bkp/

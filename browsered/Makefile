@@ -22,10 +22,10 @@ all:
 	@echo "Browsered: open browsered/Browsered.html in Chrome or Edge (the helper is built on macOS and Windows)."
 endif
 
-$(APP)/Contents/MacOS/browsered: browsered.c assistant.c pdf.c $(RESOURCES)
+$(APP)/Contents/MacOS/browsered: browsered.c assistant.c sources.c pdf.c $(RESOURCES)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
-	cc -std=c11 -Wall -Wextra -Werror -O2 browsered.c assistant.c pdf.c \
-	    -framework CoreFoundation -framework CoreGraphics -framework CoreText \
+	cc -std=c11 -Wall -Wextra -Werror -O2 browsered.c assistant.c sources.c pdf.c \
+	    -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework PDFKit \
 	    $(LIBDIRS) -lxml2 -lcmark-gfm -o $@
 	cp $(RESOURCES) $(APP)/Contents/Resources/
 

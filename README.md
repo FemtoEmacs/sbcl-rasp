@@ -14,6 +14,10 @@ Components are added as the project needs them:
 | `browsered/`  | Browsered, an Emacs-like editor that runs in Chrome or Edge     |
 | `qprolog/`    | qprolog, a Prolog written in SBCL                              |
 
+## Aviso
+
+Isto não é um produto e deve ser usado apenas para testar o software, Claude Code, Codex, OpenEvidence e os algoritmos. Se alguém quiser desenvolver o produto para venda, distribuição ou uso próprio, sinta-se à vontade para fazê-lo.
+
 ## Build and test
 
 ```sh
