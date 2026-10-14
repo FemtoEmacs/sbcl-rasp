@@ -1,0 +1,1055 @@
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/Makefile /home/claude/sbcl-rasp/Makefile
+--- a/Makefile	2020-12-15 16:02:07.000000000 -0300
++++ b/Makefile	2026-10-14 00:29:38.254650895 -0300
+@@ -1,104 +1,61 @@
+-ARCH = $(shell uname -m | sed "s/i.86/ix86/")_$(shell uname -s | tr "[:upper:]" "[:lower:]")
+-ifeq ($(ARCH), ix86_darwin)
+-   ifeq ($(shell sysctl -n hw.optional.x86_64), 1)
+-    ARCH = x86_64_darwin
+-  endif
+-endif
+-ifneq (,$(findstring darwin,$(ARCH)))
+-  SED_EXT_RE=E
+-else
+-  SED_EXT_RE=r
+-endif
++# sbcl-rasp: the RASP parser for English (release 3.3a), ported to SBCL and
++# repaired.  Building needs only SBCL, a C compiler and make; flex comes with
++# the sources (third_party/) and is built once.
++#
++#   make          build everything into bin/<arch>/
++#   make check    run the tests (tests/check.lisp)
++#   make clean    remove what make built
++
++ARCH := $(shell uname -m | sed "s/i.86/ix86/")_$(shell uname -s | tr "[:upper:]" "[:lower:]")
++B := bin/$(ARCH)
++
++SBCL ?= sbcl
++SBCL_HEAP ?= 4096
++FLEXVER := 2.6.4
++
++.PHONY: all check clean
++
++all: $(B)/sentence $(B)/token $(B)/label $(B)/morpha \
++     tag/auxiliary_files/seclarge-c2s.lex $(B)/gde-sbcl
++
++$(B):
++	mkdir -p $@
++
++# flex, built from the bundled sources, so that every scanner is generated
++# from its .flex file by the same version on every machine.
++$(B)/flex: third_party/flex-$(FLEXVER).tar.gz | $(B)
++	rm -rf $(B)/flex-$(FLEXVER)
++	cd $(B) && tar xzf ../../third_party/flex-$(FLEXVER).tar.gz
++	cd $(B)/flex-$(FLEXVER) && ./configure --quiet --disable-shared --disable-nls \
++	    CFLAGS="-O2 -D_GNU_SOURCE" && $(MAKE) -C src flex
++	cp $(B)/flex-$(FLEXVER)/src/flex $@
++
++# The four C programs of the pipeline.
++$(B)/sentence: sentence/sentence.flex enc/charclasses.flex $(B)/flex
++	$(MAKE) -C $(B) -f ../../sentence/Makefile sentence
++
++$(B)/token: tokenise/token.flex enc/charclasses.flex $(B)/flex
++	$(MAKE) -C $(B) -f ../../tokenise/Makefile token
++
++# morpha.lex is large: flex takes a minute or two to generate its scanner.
++$(B)/morpha: morph/morpha.lex enc/charclasses.flex $(B)/flex
++	$(MAKE) -C $(B) -f ../../morph/Makefile morpha
++
++$(B)/label: $(wildcard tag/src/*.c tag/src/*.h) tag/Makefile | $(B)
++	$(MAKE) -C $(B) -f ../../tag/Makefile label
++
++# The tagger's dictionary: the original word list plus our additions.
++tag/auxiliary_files/seclarge-c2s.lex: tag/auxiliary_files/seclarge.lex \
++    tag/auxiliary_files/c2s-additions.lex tag/auxiliary_files/make-c2s-lex.sh
++	sh tag/auxiliary_files/make-c2s-lex.sh
++
++# The parser: an SBCL executable with the grammar loaded.
++$(B)/gde-sbcl: gde/build-sbcl.lisp $(wildcard gde/cgde/*.lsp gde/cpar/*.lsp prob/code/*.lsp) \
++    $(wildcard prob/data/tsg15*) | $(B)
++	$(SBCL) --dynamic-space-size $(SBCL_HEAP) --non-interactive --load gde/build-sbcl.lisp
+ 
+-BINS = aux sentence token label morpha gde
+-
+-.PHONY: $(BINS)
+-all: $(BINS)
++check: all
++	$(SBCL) --script tests/check.lisp
+ 
+ clean:
+-	rm -rf bin/$(ARCH)
+-
+-$(BINS) $(addprefix bin/$(ARCH)/,flex libdb.a ccl ccl.image): | bin bin/$(ARCH)
+-
+-bin:
+-	mkdir bin
+-
+-bin/$(ARCH):
+-	mkdir bin/$(ARCH)
+-
+-sentence:
+-	$(MAKE) -C bin/$(ARCH) -f ../../sentence/Makefile sentence
+-
+-token:
+-	$(MAKE) -C bin/$(ARCH) -f ../../tokenise/Makefile token
+-
+-label:
+-	$(MAKE) -C bin/$(ARCH) -f ../../tag/Makefile label
+-
+-morpha:
+-	$(MAKE) -C bin/$(ARCH) -f ../../morph/Makefile morpha
+-
+-gde:
+-	$(MAKE) -C bin/$(ARCH) -f ../../gde/Makefile gde
+-
+-# $(CURDIR) might make more sense than ../..
+-
+-# Note:  Nothing will happen if ../../sentence/sentence exists and is up to date
+-#        and there is no /bin/$(ARCH)/sentence.
+-#        Should the binary file be moved in that case?
+-
+-
+-# Auxiliary libraries and programs needed to compile RASP.
+-
+-aux: $(addprefix bin/$(ARCH)/,flex libdb.a ccl ccl.image)
+-
+-bin/flex-2.5.4a.tar.gz: | bin
+-	curl https://www.mirrorservice.org/sites/ftp.slackware.com/pub/slackware/slackware-7.1/source/d/flex/flex-2.5.4a.tar.gz -Ro $@
+-
+-bin/bison-1.26a.tar.gz: | bin
+-	curl http://ftp.gnu.org/gnu/bison/bison-1.26a.tar.gz -Ro $@
+-
+-bin/db-3.1.17.tar.gz: | bin
+-	curl https://download.oracle.com/berkeley-db/db-3.1.17.tar.gz -Ro $@
+-
+-bin/$(ARCH)/flex: bin/flex-2.5.4a.tar.gz bin/bison-1.26a.tar.gz
+-	cd bin/$(ARCH); tar xzf ../flex-2.5.4a.tar.gz; tar xzf ../bison-1.26a.tar.gz
+-	sed -$(SED_EXT_RE) -i.orig -e '/#define (JAMSTATE|MAXIMUM_MNS|BAD_SUBSCRIPT)/ s/[0-9]+/800000/' bin/$(ARCH)/flex-2.5.4/flexdef.h
+-	for d in flex-2.5.4 bison-1.26; do sed -i.orig '/^main(){/ s/^/int /; s/exit *(\(.*\))/return \1/' bin/$(ARCH)/$$d/configure; done
+-	cd bin/$(ARCH)/bison-1.26; ./configure; make
+-	cd bin/$(ARCH)/flex-2.5.4; YACC="BISON_SIMPLE=../bison-1.26/bison.simple ../bison-1.26/bison -y" ./configure; make
+-	mv bin/$(ARCH)/flex-2.5.4/flex $@
+-
+-bin/$(ARCH)/libdb.a: bin/db-3.1.17.tar.gz
+-	cd bin/$(ARCH); tar xzf ../db-3.1.17.tar.gz
+-	sed -i.orig '/^main(){/ s/^/int /; s/exit *(\(.*\))/return \1/; /exit *( *$$/,/;/ {s/exit *(/return/; s/);/;/;}' bin/$(ARCH)/db-3.1.17/dist/configure
+-	sed -i.orig '/#include "db_int.h"/ s/^/#include <string.h>\'$$'\n/' bin/$(ARCH)/db-3.1.17/db/db_cam.c
+-	cd bin/$(ARCH)/db-3.1.17/build_unix; ../dist/configure; make
+-	mv bin/$(ARCH)/db-3.1.17/build_unix/libdb.a $@
+-
+-CCLVERSION = 1.12
+-ifeq ($(ARCH), ix86_linux)
+-  CCL = lx86cl
+-  CCLARCH = linuxx86
+-else ifeq ($(ARCH), x86_64_linux)
+-  CCL = lx86cl64
+-  CCLARCH = linuxx86
+-else ifeq ($(ARCH), ix86_darwin)
+-  CCL = dx86cl
+-  CCLARCH = darwinx86
+-else ifeq ($(ARCH), x86_64_darwin)
+-  CCL = dx86cl64
+-  CCLARCH = darwinx86
+-else
+-$(error Unknown architecture $(ARCH))
+-endif
+-
+-bin/$(ARCH)/ccl: bin/ccl-$(CCLVERSION)-$(CCLARCH).tar.gz
+-	cd bin/$(ARCH); tar xmf ../$(notdir $<) $(CCL); mv $(CCL) ccl
+-
+-bin/$(ARCH)/ccl.image: bin/ccl-$(CCLVERSION)-$(CCLARCH).tar.gz
+-	cd bin/$(ARCH); tar xmf ../$(notdir $<) $(CCL).image; mv $(CCL).image ccl.image
+-
+-bin/ccl-$(CCLVERSION)-$(CCLARCH).tar.gz: | bin
+-	curl https://github.com/Clozure/ccl/releases/download/v$(CCLVERSION)/$(CCLARCH).tar.gz -LRo $@
+-
++	rm -rf $(B) tag/auxiliary_files/seclarge-c2s.lex
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/gde/build-sbcl.lisp /home/claude/sbcl-rasp/gde/build-sbcl.lisp
+--- a/gde/build-sbcl.lisp	1969-12-31 21:00:00.000000000 -0300
++++ b/gde/build-sbcl.lisp	2026-10-13 08:39:41.000000000 -0300
+@@ -0,0 +1,23 @@
++;;;; build-sbcl.lisp -- build the RASP parser image (gde) with SBCL.
++;;;; Usage, from rasp3os/:  sbcl --non-interactive --load gde/build-sbcl.lisp
++;;;; Writes bin/<arch>/gde-sbcl, an executable that takes the same -e arguments
++;;;; as the Clozure CL image.
++
++(let* ((gde-dir (make-pathname :name nil :type nil :defaults *load-truename*))
++       (root (merge-pathnames "../" gde-dir))
++       (arch (format nil "~(~A~)_~(~A~)"
++                     (string-trim '(#\Newline)
++                                  (with-output-to-string (s)
++                                    (sb-ext:run-program "/usr/bin/uname" '("-m") :output s)))
++                     (string-trim '(#\Newline)
++                                  (with-output-to-string (s)
++                                    (sb-ext:run-program "/usr/bin/uname" '("-s") :output s)))))
++       (out (merge-pathnames (format nil "bin/~A/gde-sbcl" arch) root)))
++  (ensure-directories-exist out)
++  (let ((*default-pathname-defaults* gde-dir))
++    (load (merge-pathnames "cgde/load.lsp" gde-dir))
++    (load (merge-pathnames "cpar/load.lsp" gde-dir))
++    (load (merge-pathnames "../prob/code/load.lsp" gde-dir)))
++  (format t "~&Saving ~A~%" (namestring out))
++  (funcall (intern "SAVE-GDE-IMAGE" "CL-USER") (namestring out)
++           :executable t :save-runtime-options t))
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/morph/Makefile /home/claude/sbcl-rasp/morph/Makefile
+--- a/morph/Makefile	2020-12-15 16:02:08.000000000 -0300
++++ b/morph/Makefile	2026-10-14 00:29:15.985759911 -0300
+@@ -14,7 +14,7 @@
+ # But for use via pipes inside other programs don't give flex any options.
+ #
+ #FLEXOPT = -Cfe -8
+-FLEXOPT =
++FLEXOPT = -Ca             # sbcl-rasp: long tables; morpha.lex has > 32000 NFA states
+ CCOPT = -O
+ 
+ #.SECONDARY: # %.yy.c does not work with pattern rule
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/prob/code/extract-grs.lsp /home/claude/sbcl-rasp/prob/code/extract-grs.lsp
+--- a/prob/code/extract-grs.lsp	2020-12-15 16:02:09.000000000 -0300
++++ b/prob/code/extract-grs.lsp	2026-10-13 08:39:41.000000000 -0300
+@@ -23,6 +23,11 @@
+ 
+ (in-package #+(or cltl2 x3j13 ansi-cl) common-lisp-user #-(or cltl2 x3j13 ansi-cl) 'user)
+ 
++;;; Declared here because functions below use them before their
++;;; definitions further down (avoids undefined-variable warnings in SBCL).
++(defvar +file-out+)
++(defvar +threshold-list+)
++
+ ;;(set-print-fn 'gw)
+ ;;(setf *print-level* nil)
+ ;;(setf *print-circle* nil)
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/prob/code/tools.lsp /home/claude/sbcl-rasp/prob/code/tools.lsp
+--- a/prob/code/tools.lsp	2020-12-15 16:02:09.000000000 -0300
++++ b/prob/code/tools.lsp	2026-10-13 08:39:41.000000000 -0300
+@@ -58,11 +58,19 @@
+ 
+ (defparameter +parse-timeout+ 20) ; in seconds cpu time
+ 
+-#+(or allegro sbcl)
++#+allegro
+ (defparameter +parse-storeout+
+    ;; 800MB (64 bit) or 400MB (32 bit)
+    (if (> most-positive-fixnum (ash 2 32)) 800000000 400000000))
+ 
++;;; SBCL: no consing quota by default. Like the Clozure CL version, stop a
++;;; parse only when the heap is nearly full (see +heap-fraction-limit+).
++;;; Setting +parse-storeout+ to a number of bytes adds a consing quota.
++#+sbcl
++(defparameter +parse-storeout+ nil)
++#+sbcl
++(defparameter +heap-fraction-limit+ 0.8)
++
+ 
+ ;;; If we're within two memory allocation quanta of the next GC, check if
+ ;;; the amount of heap available before we would reach the maximum heap size
+@@ -217,41 +225,47 @@
+ (define-condition parse-timeout (simple-condition) ())
+ (define-condition parse-storeout (simple-condition) ())
+ (defmacro execute-with-timeout (timeout-form &body body)
+-   ;; version of built-in with-timeout macro, roughly equivalent to
+-   ;; `(handler-case (sb-ext:with-timeout +parse-timeout+ ,@body) (timeout () ,timeout-form))
+-   ;; but better in that it uses actual computation time not real time
+-   ;; and that GC time is not counted in timeout -- also with
+-   ;; addition of facility for giving a memory quota, in +parse-storeout+
++   ;; Run BODY; if it uses more than +parse-timeout+ seconds of CPU time
++   ;; (GC time excluded) or conses more than +parse-storeout+ bytes, abandon
++   ;; it and evaluate TIMEOUT-FORM instead.
++   ;; A timer interrupts this thread every 0.25 s to check both limits.
++   ;; (Earlier versions bound SB-EXT:*AFTER-GC-HOOKS* with LET*; current SBCL
++   ;; makes that variable a global, which cannot be rebound.)
+    `(let ((.vals. nil))
+        (handler-case
+-          (setq .vals.
+-             (let*
+-                ((.parse-timeout.
+-                    (if (and (numberp +parse-timeout+) (> +parse-timeout+ 0))
+-                       (+ (* +parse-timeout+ internal-time-units-per-second)
+-                          (- (get-internal-run-time) sb-ext:*gc-run-time*))
+-                       nil))
+-                 (.parse-storeout.
+-                   (if (and (numberp +parse-storeout+) (> +parse-storeout+ 0))
+-                       (+ +parse-storeout+ (sb-ext:get-bytes-consed))
+-                       nil))
+-                 (sb-ext:*after-gc-hooks*
+-                    (cons
+-                       #'(lambda ()
+-                            (when (and .parse-timeout.
+-                                     (> (- (get-internal-run-time) sb-ext:*gc-run-time*)
+-                                        .parse-timeout.))
+-                               (signal 'parse-timeout))
+-                            (when (and .parse-storeout.
+-                                     (> (sb-ext:get-bytes-consed) .parse-storeout.))
+-                               (signal 'parse-storeout)))
+-                       sb-ext:*after-gc-hooks*)))
+-                (multiple-value-list (progn ,@body))))
++          (let*
++             ((.parse-timeout.
++                 (if (and (numberp +parse-timeout+) (> +parse-timeout+ 0))
++                    (+ (* +parse-timeout+ internal-time-units-per-second)
++                       (- (get-internal-run-time) sb-ext:*gc-run-time*))
++                    nil))
++              (.parse-storeout.
++                 (if (and (numberp +parse-storeout+) (> +parse-storeout+ 0))
++                    (+ +parse-storeout+ (sb-ext:get-bytes-consed))
++                    nil))
++              (.timer.
++                 (sb-ext:make-timer
++                    #'(lambda ()
++                         (when (and .parse-timeout.
++                                  (> (- (get-internal-run-time) sb-ext:*gc-run-time*)
++                                     .parse-timeout.))
++                            (signal 'parse-timeout))
++                         (when (or (and .parse-storeout.
++                                      (> (sb-ext:get-bytes-consed) .parse-storeout.))
++                                   (> (sb-kernel:dynamic-usage)
++                                      (* +heap-fraction-limit+ (sb-ext:dynamic-space-size))))
++                            (signal 'parse-storeout)))
++                    :name "rasp-parse-limits")))
++             (unwind-protect
++                (progn
++                   (sb-ext:schedule-timer .timer. 0.25 :repeat-interval 0.25)
++                   (setq .vals. (multiple-value-list (progn ,@body))))
++                (sb-ext:unschedule-timer .timer.)))
+           (parse-timeout ()
+              (format *error-output* "~%Timed out at ~A secs~%" +parse-timeout+)
+              (setq .vals. (multiple-value-list ,timeout-form)))
+           (parse-storeout ()
+-             (format *error-output* "~%Memory quota of ~A bytes exceeded~%" +parse-storeout+)
++             (format *error-output* "~%Memory exhausted~%")
+              (setq .vals. (multiple-value-list ,timeout-form)))
+           (serious-condition (c)
+              (format *error-output* "~%computation stopped due to a ~A: ~A~%"
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/prob/code/xml-output.lsp /home/claude/sbcl-rasp/prob/code/xml-output.lsp
+--- a/prob/code/xml-output.lsp	2020-12-15 16:02:09.000000000 -0300
++++ b/prob/code/xml-output.lsp	2026-10-13 08:39:41.000000000 -0300
+@@ -22,6 +22,12 @@
+ 
+ (in-package #+(or cltl2 x3j13 ansi-cl) common-lisp-user #-(or cltl2 x3j13 ansi-cl) 'user)
+ 
++;;; Declared before first use (avoids undefined-variable warnings in SBCL).
++(defvar +compress-xml+)
++(defvar *first-tree-p*)
++(defvar *last-tree-p*)
++(defvar *tree-weight*)
++
+ (defparameter +xml-print-dtd+ nil)
+ (defparameter +xml-print-enc+ nil)
+ (defparameter +xml-print-rasp-tags+ nil)
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/prob/patch2-c2s.lsp /home/claude/sbcl-rasp/prob/patch2-c2s.lsp
+--- a/prob/patch2-c2s.lsp	1969-12-31 21:00:00.000000000 -0300
++++ b/prob/patch2-c2s.lsp	2026-10-13 11:25:57.000000000 -0300
+@@ -0,0 +1,106 @@
++;;; RASP/PROB - patch2-c2s.lsp -- c2s-cover constraints for grammar checking
++;;;
++;;; Loaded at run time by scripts/rasp_parse.sh, after the parser image.
++;;; RASP's grammar sees part-of-speech tags, not words, so it cannot reject
++;;; "for for" or "an" read as a proper noun.  The constraints below look at
++;;; the words.  A sentence that violates one gets no full parse: the parser
++;;; reports its partial analysis instead (0 parses), as for any other
++;;; sentence outside the grammar.  Claude, 2026-10-13.
++
++(in-package #+(or cltl2 x3j13 ansi-cl) common-lisp-user #-(or cltl2 x3j13 ansi-cl) 'user)
++
++(declaim (optimize (safety 3) (debug 2)))
++
++(defparameter +c2s-never-doubled+
++  '("a" "an" "the" "of" "for" "to" "into" "onto" "from" "with" "without"
++    "than" "at" "among" "alongside" "between" "within" "upon" "during"
++    "towards" "toward" "and" "or" "nor" "its" "their" "our" "my" "your")
++  "Words that are never correct twice in a row.  Words that can end a
++phrasal verb (in, on, up, over, by ...) and words with legitimate doubles
++(that that, had had) are deliberately absent.")
++
++(defparameter +c2s-not-names+
++  '("a" "an" "the" "of" "for" "to" "in" "on" "at" "by" "with" "and" "or")
++  "Lowercase function words that must not be read as proper nouns.")
++
++(defvar *c2s-reject-reason* nil
++  "Why the current sentence may not have a full parse, or NIL.")
++
++(declaim (ftype (function (t) simple-string) c2s-word-form))
++(defun c2s-word-form (token)
++  "Lowercase surface form of TOKEN.  With several tags per word a token is
++(SURFACE (TAGGED . SCORE) ...); with one tag it is the symbol LEMMA:N_TAG."
++  (let* ((name (string (if (consp token) (car token) token)))
++         (end (if (consp token) (length name) (or (position #\: name) (length name)))))
++    (coerce (string-downcase (subseq name 0 end)) 'simple-string)))
++
++(declaim (ftype (function (t) list) c2s-token-tags))
++(defun c2s-token-tags (token)
++  "The tag strings offered for TOKEN, e.g. (\"NP1\" \"AT1\")."
++  (flet ((tag-of (sym)
++           (let ((s (string sym)))
++             (subseq s (1+ (or (position #\_ s :from-end t) -1))))))
++    (if (consp token)
++        (mapcar (lambda (alt) (tag-of (car alt))) (cdr token))
++        (list (tag-of token)))))
++
++(declaim (ftype (function (list) (or null string)) c2s-violation))
++(defun c2s-violation (words)
++  "A short description of the first constraint WORDS violate, or NIL."
++  (flet ((lowercase-p (token)
++           (let ((s (string (if (consp token) (car token) token))))
++             (and (plusp (length s)) (lower-case-p (char s 0))))))
++    (or
++     ;; the same function word twice in a row: "for for", "a a"
++     (loop for (w1 w2) on words
++           for f1 = (c2s-word-form w1)
++           while w2
++           when (and (string= f1 (c2s-word-form w2))
++                     (member f1 +c2s-never-doubled+ :test #'string=))
++             do (return (format nil "doubled word ~S" f1)))
++     ;; a lowercase function word that the tagger could only read as a name,
++     ;; as "an" in "an of antigen presentation"
++     (loop for token in words
++           when (and (consp token)
++                     (lowercase-p token)
++                     (member (c2s-word-form token) +c2s-not-names+ :test #'string=)
++                     (every (lambda (tag) (member tag '("NP1" "NP2") :test #'string=))
++                            (c2s-token-tags token)))
++             do (return (format nil "function word ~S read as a name"
++                                (c2s-word-form token)))))))
++
++(declaim (ftype (function (list) list) c2s-drop-name-readings))
++(defun c2s-drop-name-readings (words)
++  "Remove proper-noun readings (NP1, NP2) of lowercase function words such
++as \"an\", which the tagger can look up capitalised.  Only tokens with
++several readings are changed."
++  (mapcar
++   (lambda (token)
++     (if (and (consp token)
++              (cddr token)              ; more than one reading
++              (let ((s (string (car token))))
++                (and (plusp (length s)) (lower-case-p (char s 0))))
++              (member (c2s-word-form token) +c2s-not-names+ :test #'string=))
++         (let ((kept (remove-if (lambda (alt)
++                                  (member (car (c2s-token-tags (list nil alt)))
++                                          '("NP1" "NP2") :test #'string=))
++                                (cdr token))))
++           (if kept (cons (car token) kept) token))
++         token))
++   words))
++
++(let ((original-parse (symbol-function 'lr1-parse))
++      (original-parse-1 (symbol-function 'lr1-parse-1)))
++  (declare (type function original-parse original-parse-1))
++  (setf (symbol-function 'lr1-parse)
++        (lambda (words)
++          (let* ((words (c2s-drop-name-readings words))
++                 (*c2s-reject-reason* (c2s-violation words)))
++            (funcall original-parse words))))
++  (setf (symbol-function 'lr1-parse-1)
++        (lambda (&rest args)
++          (multiple-value-prog1 (apply original-parse-1 args)
++            (when (and *c2s-reject-reason* *accepted-vertex-analyses*)
++              (setq *accepted-vertex-analyses* nil))))))
++
++;;; End of file
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/scripts/rasp.sh /home/claude/sbcl-rasp/scripts/rasp.sh
+--- a/scripts/rasp.sh	2020-12-15 16:02:18.000000000 -0300
++++ b/scripts/rasp.sh	2026-10-13 10:28:44.000000000 -0300
+@@ -47,12 +47,13 @@
+ # Process any command line options
+ 
+ debug="false"
+-tagout="O36"
++tagout="O60"   # c2s: several tags per word by default; -1 restores one tag
+ parseopts=
+ wspans=
+-while getopts dhmp:wxX:t: opt
++while getopts 1dhmp:wxX:t: opt
+ do
+      case $opt in
++     1) tagout="O36";;
+      d) debug="true";;
+      h) hardwrap="-h";;
+      m) tagout="O60";;
+@@ -61,7 +62,7 @@
+      w) wspans="-w";;
+      x) xmlinput="-x";;
+      X) xmlinput="-x"; psilothron="$OPTARG";;
+-     ?) echo "Usage: $0 [-d] [-h] [-m] [-p<parseopts>] [-w] [-x]";
++     ?) echo "Usage: $0 [-1] [-d] [-h] [-m] [-p<parseopts>] [-w] [-x]";
+         exit 1;;
+      esac
+ done
+@@ -90,7 +91,7 @@
+ 
+ ${rasp_tag:-$RASP/bin/${arch}/label - B1 b C1 N W \
+   t $RASP/tag/auxiliary_files/slb.trn \
+-  d $RASP/tag/auxiliary_files/seclarge.lex \
++  d $RASP/tag/auxiliary_files/seclarge-c2s.lex \
+   j $RASP/tag/auxiliary_files/unkstats-seclarge \
+   m $RASP/tag/auxiliary_files/tags.map \
+   $tagout} |
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/scripts/rasp_parse.sh /home/claude/sbcl-rasp/scripts/rasp_parse.sh
+--- a/scripts/rasp_parse.sh	2020-12-15 16:02:18.000000000 -0300
++++ b/scripts/rasp_parse.sh	2026-10-13 11:24:41.000000000 -0300
+@@ -29,7 +29,7 @@
+ # ./rasp_parse.sh < ../prob/greval/parc700/test.not-ne.stag.data | more 
+ #
+ 
+-RASP=`dirname $0`/..
++RASP=`cd "\`dirname $0\`/.." && pwd`  # c2s: absolute, so the parser image can find prob/patch*.lsp
+ 
+ if [ ! -d "$RASP" ]; then
+   printf "$0: could not read RASP directory '%s'\n" "$RASP" > /dev/stderr
+@@ -42,8 +42,19 @@
+     arch=x86_64_darwin;
+ fi
+ 
+-if [ ! -f $RASP/bin/${arch}/gde ]; then
+-  printf "$0: could not find parser executable\n" > /dev/stderr
++# Parser image: Clozure CL (bin/<arch>/gde) or SBCL (bin/<arch>/gde-sbcl).
++# RASP_LISP=sbcl or RASP_LISP=ccl chooses; otherwise use whichever exists, CCL first.
++lisp="${RASP_LISP:-}"
++if [ -z "$lisp" ]; then
++  if [ -f $RASP/bin/${arch}/gde ]; then lisp=ccl; else lisp=sbcl; fi
++fi
++case $lisp in
++  ccl)  gdebin=$RASP/bin/${arch}/gde;;
++  sbcl) gdebin=$RASP/bin/${arch}/gde-sbcl;;
++  *) printf "$0: RASP_LISP must be ccl or sbcl\n" > /dev/stderr; exit 1;;
++esac
++if [ ! -f $gdebin ]; then
++  printf "$0: could not find parser executable %s\n" "$gdebin" > /dev/stderr
+   exit 1;
+ fi
+ 
+@@ -141,7 +152,11 @@
+   exit 1
+ fi
+ 
+-gde="$RASP/bin/${arch}/gde -b -R $memlimit"
++if [ $lisp = ccl ]; then
++  gde="$gdebin -b -R $memlimit"
++else
++  gde="$gdebin"
++fi
+ 
+ fsh="/tmp/`whoami`-`basename $0`-sh$$"
+ 
+@@ -201,17 +216,17 @@
+ ;;; Partially disable generational GC (it's not particularly useful since storage is
+ ;;; allocated and becomes garbage in waves), and raise global GC threshold
+ 
+-#+:x86
++#+(and clozure x86 (not x86-64))
+ (progn
+    (ccl:configure-egc 90000 90000 90000) ; 90MB
+    (ccl:set-lisp-heap-gc-threshold 150000000)) ; 150 MB
+-#+:x86-64
++#+(and clozure x86-64)
+ (progn
+    (ccl:configure-egc 180000 180000 180000) ; 180MB
+    (ccl:set-lisp-heap-gc-threshold 300000000)) ; 300MB
+-(ccl:gc-retain-pages t)
++#+clozure (ccl:gc-retain-pages t)
+ ; (ccl:gc-verbose t t)
+-(setq +memlimit+ $memlimit)
++#+clozure (setq +memlimit+ $memlimit)
+ 
+ 
+ ;;; Ensure graceful recovery from interrupt (^C) and quits due to piping through
+@@ -235,6 +250,16 @@
+          (finish-output *error-output*)
+          (ccl:quit 1))))
+ 
++;;; SBCL: report the condition and exit with status 1 instead of entering the
++;;; debugger (the CCL image does this through its -b option).
++#+sbcl
++(setf sb-ext:*invoke-debugger-hook*
++   #'(lambda (cond hook) (declare (ignore hook))
++      (format *error-output* "~%> Condition of type ~A: ~A.~%" (type-of cond) cond)
++      (sb-debug:print-backtrace :count 50 :stream *error-output*)
++      (finish-output *error-output*)
++      (sb-ext:exit :code 1 :abort t)))
++
+ 
+ ;;; Patches (if any, loaded in lexicographical order) and initialisation
+ 
+@@ -242,7 +267,7 @@
+    (sort
+       (directory
+          (merge-pathnames
+-            (make-pathname :name "patch*" :type "lsp")
++            "patch*.lsp" ; c2s: a string, so that SBCL reads * as a wildcard
+             (parse-namestring "$RASP/prob/")))
+       #'string< :key #'namestring))
+          
+@@ -250,7 +275,14 @@
+ ;;; Standard input (and output) should be
+ ;;; "faithful", passing bytes through without interpretation - because we don't
+ ;;; know the encoding of the input stream. This should work fine with the CCL
+-;;; default, which is for streams to have external format ISO-8859-1
++;;; default, which is for streams to have external format ISO-8859-1.
++;;; SBCL's default is UTF-8, so give it ISO-8859-1 standard streams too.
++
++#+sbcl
++(setq *standard-input*
++        (sb-sys:make-fd-stream 0 :input t :external-format :latin-1 :buffering :full)
++      *standard-output*
++        (sb-sys:make-fd-stream 1 :output t :external-format :latin-1 :buffering :full))
+ 
+ 
+ (progn $initforms)
+@@ -264,6 +296,7 @@
+ ${gde} -e "(progn
+ (load \"$fsh\" :verbose nil)
+ (lr1-parse-analysis-trees *standard-input* *standard-output* \"$logfile\")
++(finish-output *standard-output*)
+ (quit))"
+ 
+ parse_status=$?
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/sentence/sentence.flex /home/claude/sbcl-rasp/sentence/sentence.flex
+--- a/sentence/sentence.flex	2020-12-15 16:02:18.000000000 -0300
++++ b/sentence/sentence.flex	2026-10-13 10:30:10.000000000 -0300
+@@ -104,7 +104,10 @@
+ 
+ {num}({endmarker}|"."){trail_end}*{ambiquote}?{trail_end}*       {tok(); BEGIN(end_sent_num);}
+ {num}({endmarker}|"."){trail_end}*{ambiquote}?{trail_end}*{bl}+  {tok(); BEGIN(end_sent);}
+-({endmarker}|"."){trail_end}*{ambiquote}?{trail_end}*{bl}*  {tok(); BEGIN(end_sent);}
++  /* c2s: without a following blank, "." starts a sentence only before a capital,
++     so "j.scib.2026" and other DOIs are not split before their digits */
++({endmarker}|"."){trail_end}*{ambiquote}?{trail_end}*{bl}+  {tok(); BEGIN(end_sent);}
++({endmarker}|"."){trail_end}*{ambiquote}?{trail_end}*  {tok(); BEGIN(end_sent_num);}
+ <end_sent_num>({lead}|\'|{ambiquote})*/({upper})  {BEGIN(new_sent); tok();}
+ <end_sent>({lead}|\'|{ambiquote})*/({upper}|{num})  {BEGIN(new_sent); tok();}
+ <end_sent,end_sent_num>.|"\n" {unput(yytext[0]); BEGIN(new_tok);}
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tag/Makefile /home/claude/sbcl-rasp/tag/Makefile
+--- a/tag/Makefile	2020-12-15 16:02:18.000000000 -0300
++++ b/tag/Makefile	2026-10-14 00:29:15.976649166 -0300
+@@ -12,10 +12,10 @@
+ LIBOPT = rc
+ DOLINK = $(LINK) $(LINKOPT) -o $@
+ LABELLIB = labellib.a
+-LIBDB = libdb.a -lpthread
++LIBDB =                 # sbcl-rasp: no Berkeley DB (see src/nodb.c)
+ 
+ # Remove object files and labellib.a after compilation:
+-.INTERMEDIATE: analyse.o common.o diction.o io.o label.o list.o low.o mainl.o map.o stack.o trans.o unkcommon.o unkdiction.o labellib.a
++.INTERMEDIATE: analyse.o common.o diction.o io.o label.o list.o low.o mainl.o map.o stack.o trans.o unkcommon.o unkdiction.o nodb.o labellib.a
+ 
+ # This is a suffix rule 
+ #.c.o: 
+@@ -26,7 +26,7 @@
+ all:  	cmptran conversion dephrase dmerge dtinfo exdict label outcomp readtr transtr rules
+ 
+ # Library
+-labellib.a: common.o unkcommon.o diction.o unkdiction.o io.o list.o low.o map.o trans.o
++labellib.a: common.o unkcommon.o diction.o unkdiction.o io.o list.o low.o map.o trans.o nodb.o
+ 	$(LIB) $(LIBOPT) $@ $?
+ 
+ # Targets
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tag/auxiliary_files/c2s-additions.lex /home/claude/sbcl-rasp/tag/auxiliary_files/c2s-additions.lex
+--- a/tag/auxiliary_files/c2s-additions.lex	1969-12-31 21:00:00.000000000 -0300
++++ b/tag/auxiliary_files/c2s-additions.lex	2026-10-13 10:28:37.000000000 -0300
+@@ -0,0 +1,9 @@
++benchmark 2 NN1 3 VV0 2
++benchmarks 2 NN2 2 VVZ 1
++benchmarked 2 VVD 1 VVN 2
++benchmarking 2 VVG 2 NN1 1
++reuse 2 NN1 2 VV0 2
++reuses 2 NN2 1 VVZ 1
++reused 2 VVD 1 VVN 2
++reusing 1 VVG 2
++CINEMA-OT 1 NP1 2
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tag/auxiliary_files/make-c2s-lex.sh /home/claude/sbcl-rasp/tag/auxiliary_files/make-c2s-lex.sh
+--- a/tag/auxiliary_files/make-c2s-lex.sh	1969-12-31 21:00:00.000000000 -0300
++++ b/tag/auxiliary_files/make-c2s-lex.sh	2026-10-13 10:28:37.000000000 -0300
+@@ -0,0 +1,6 @@
++#!/bin/sh
++# Build seclarge-c2s.lex = seclarge.lex (unchanged) + c2s-additions.lex.
++# The tagger merges repeated words, so additions may add tags to existing words.
++cd "$(dirname "$0")"
++n=$(( $(tail -n +2 seclarge.lex | wc -l) + $(grep -c . c2s-additions.lex) ))
++{ printf 'D%d\n' "$n"; tail -n +2 seclarge.lex; cat c2s-additions.lex; } > seclarge-c2s.lex
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tag/src/nodb.c /home/claude/sbcl-rasp/tag/src/nodb.c
+--- a/tag/src/nodb.c	1969-12-31 21:00:00.000000000 -0300
++++ b/tag/src/nodb.c	2026-10-14 00:29:15.931459915 -0300
+@@ -0,0 +1,28 @@
++/*
++ * nodb.c -- sbcl-rasp: the tagger without Berkeley DB.
++ *
++ * The tagger can read its dictionary from a Berkeley DB file (option -v,
++ * "bdbm"), but scripts/rasp.sh never uses that option: it reads the plain
++ * text dictionary seclarge-c2s.lex.  These two functions replace the library,
++ * so that building RASP needs no Berkeley DB.  Asking for option -v now
++ * stops with a message instead of opening the file.
++ */
++
++#include <stdio.h>
++#include <errno.h>
++#include "../database/common/db.h"
++
++int db_create(DB **dbp, DB_ENV *dbenv, u_int32_t flags)
++{
++	(void) dbenv;
++	(void) flags;
++	*dbp = NULL;
++	return ENOSYS;
++}
++
++char *db_strerror(int error)
++{
++	(void) error;
++	return "this build of RASP has no Berkeley DB; "
++	       "use the text dictionary (rasp.sh does)";
++}
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tests/check.lisp /home/claude/sbcl-rasp/tests/check.lisp
+--- a/tests/check.lisp	1969-12-31 21:00:00.000000000 -0300
++++ b/tests/check.lisp	2026-10-14 00:32:55.840795477 -0300
+@@ -0,0 +1,203 @@
++;;;; check.lisp -- the regression check of sbcl-rasp.
++;;;;
++;;;; Run from the top directory, after make:   sbcl --script tests/check.lisp
++;;;; (or simply: make check).  It runs three tests:
++;;;;
++;;;;  1. every sentence of codex-correct.txt and constructed-correct.txt must
++;;;;     get a full parse from scripts/rasp.sh;
++;;;;  2. every sentence of known-bad.txt must be rejected (0 parses), except
++;;;;     those listed in known-bad-open.txt, which are known open problems;
++;;;;  3. the parser alone, on the 560 DepBank sentences, must give exactly the
++;;;;     analyses stored in parc560-not-ne-ccl-t0.out (made by the original
++;;;;     RASP 3.3a), apart from how each Lisp escapes symbol names.
++;;;;
++;;;; The exit code is 0 when all pass, 1 otherwise.
++
++(defpackage #:rasp-check (:use #:common-lisp))
++(in-package #:rasp-check)
++
++(declaim (optimize (safety 3) (debug 2) (speed 0)))
++
++(defparameter *root*
++  (truename (merge-pathnames "../" (make-pathname :name nil :type nil
++                                                  :defaults *load-truename*)))
++  "The top directory of sbcl-rasp.")
++
++(defparameter *jobs* 8 "How many RASP processes run at once.")
++
++(declaim (ftype (function (string) pathname) path))
++(defun path (relative)
++  (merge-pathnames relative *root*))
++
++(declaim (ftype (function () list) environment))
++(defun environment ()
++  (cons "RASP_LISP=sbcl" (sb-ext:posix-environ)))
++
++;;; Reading the test files: one "id<TAB>sentence" per line.
++
++(declaim (ftype (function (string) list) read-cases))
++(defun read-cases (name)
++  (with-open-file (in (path (concatenate 'string "tests/" name)) :external-format :utf-8)
++    (loop for line = (read-line in nil nil)
++          while line
++          for tab = (position #\Tab line)
++          when tab collect (cons (subseq line 0 tab) (subseq line (1+ tab))))))
++
++(declaim (ftype (function (string) list) read-ids))
++(defun read-ids (name)
++  (let ((file (path (concatenate 'string "tests/" name))))
++    (when (probe-file file)
++      (with-open-file (in file)
++        (loop for line = (read-line in nil nil)
++              while line
++              for id = (string-trim '(#\Space #\Tab) line)
++              when (and (plusp (length id)) (char/= (char id 0) #\;)) collect id)))))
++
++;;; Running RASP on one sentence.  Its first output line for each sentence
++;;; is "(words ...) N ; (scores)"; the sentence has a full parse when RASP
++;;; sees exactly one sentence and N > 0.
++
++(declaim (ftype (function (string) (or null integer)) parse-count))
++(defun parse-count (line)
++  "N in a line \"(...) N ; (...)\", or NIL for any other line."
++  (let ((semi (search " ; " line)))
++    (when (and semi (plusp (length line)) (char= (char line 0) #\())
++      (let ((space (position #\Space line :end semi :from-end t)))
++        (when space
++          (parse-integer line :start (1+ space) :end semi :junk-allowed t))))))
++
++(declaim (ftype (function (string) t) start-rasp))
++(defun start-rasp (sentence)
++  (let ((process (sb-ext:run-program "/bin/sh"
++                                     (list (namestring (path "scripts/rasp.sh"))
++                                           "-p" "-n 1 -t 20")
++                                     :input :stream :output :stream :error nil
++                                     :wait nil :environment (environment)
++                                     :external-format :utf-8)))
++    (let ((in (sb-ext:process-input process)))
++      (write-line sentence in)
++      (close in))
++    process))
++
++(declaim (ftype (function (t) boolean) finish-rasp))
++(defun finish-rasp (process)
++  "Wait for PROCESS; true when its output shows one sentence with a full parse."
++  (let ((counts (with-open-stream (out (sb-ext:process-output process))
++                  (loop for line = (read-line out nil nil)
++                        while line
++                        for n = (parse-count line)
++                        when n collect n))))
++    (sb-ext:process-wait process)
++    (sb-ext:process-close process)
++    (and (= (length counts) 1) (plusp (first counts)))))
++
++(declaim (ftype (function (list) list) parse-all))
++(defun parse-all (cases)
++  "For each (id . sentence) of CASES, whether RASP gives a full parse,
++running *JOBS* processes at a time."
++  (let ((results '()))
++    (loop while cases
++          do (let ((batch (loop repeat *jobs* while cases collect (pop cases))))
++               (let ((processes (mapcar (lambda (c) (start-rasp (cdr c))) batch)))
++                 (loop for c in batch
++                       for p in processes
++                       do (push (cons (car c) (finish-rasp p)) results)))))
++    (nreverse results)))
++
++;;; Test 3: comparing parser outputs.  CCL writes a symbol as 473\:5_MC,
++;;; SBCL as |473:5_MC|; both are reduced to the name between bars.
++
++;;; One token of TEXT starts at START.  Returns its end and, when it was
++;;; escaped with bars or backslashes, its name.
++(declaim (ftype (function (string fixnum) (values fixnum (or null string))) read-token))
++(defun read-token (text start)
++  (let ((n (length text)) (j start) (escaped nil)
++        (name (make-string-output-stream)))
++    (declare (type fixnum n j))
++    (flet ((delimiter-p (ch) (find ch '(#\Space #\Tab #\Newline #\( #\)))))
++      (loop while (and (< j n) (not (delimiter-p (char text j))))
++            do (let ((ch (char text j)))
++                 (cond ((and (char= ch #\\) (< (1+ j) n))
++                        (write-char (char text (1+ j)) name)
++                        (incf j 2)
++                        (setf escaped t))
++                       ((char= ch #\|)
++                        (setf escaped t)
++                        (incf j)
++                        (loop while (and (< j n) (char/= (char text j) #\|))
++                              do (cond ((and (char= (char text j) #\\) (< (1+ j) n))
++                                        (write-char (char text (1+ j)) name)
++                                        (incf j 2))
++                                       (t
++                                        (write-char (char text j) name)
++                                        (incf j))))
++                        (incf j))
++                       (t
++                        (write-char ch name)
++                        (incf j))))))
++    (values (min j n) (and escaped (get-output-stream-string name)))))
++
++(declaim (ftype (function (string) string) canonical))
++(defun canonical (text)
++  "TEXT with every escaped symbol written as |name|."
++  (with-output-to-string (out)
++    (let ((i 0) (n (length text)))
++      (declare (type fixnum i n))
++      (loop while (< i n)
++            do (let ((c (char text i)))
++                 (cond ((find c '(#\Space #\Tab #\Newline #\( #\) #\"))
++                        (write-char c out)
++                        (incf i))
++                       (t
++                        (multiple-value-bind (end name) (read-token text i)
++                          (if name
++                              (format out "|~A|" name)
++                              (write-string text out :start i :end end))
++                          (setf i end)))))))))
++
++(declaim (ftype (function (pathname) list) file-lines))
++(defun file-lines (file)
++  (with-open-file (in file :external-format :latin-1)
++    (let ((text (make-string (file-length in))))
++      (let ((end (read-sequence text in)))
++        (with-input-from-string (s (canonical (subseq text 0 end)))
++          (loop for line = (read-line s nil nil) while line collect line))))))
++
++(declaim (ftype (function () boolean) depbank-identical-p))
++(defun depbank-identical-p ()
++  (let ((output (path "bin/depbank-check.out")))
++    (sb-ext:run-program "/bin/sh"
++                        (list (namestring (path "scripts/rasp_parse.sh")) "-t0")
++                        :input (path "prob/greval/DepBank/parc560/test.not-ne.stag.data")
++                        :output output :if-output-exists :supersede
++                        :error nil :environment (environment))
++    (let* ((expected (file-lines (path "tests/parc560-not-ne-ccl-t0.out")))
++           (got (file-lines output))
++           (differing (loop for a in expected for b in got
++                            for k from 1
++                            unless (string= a b) collect k)))
++      (format t "DepBank, parser only: ~D vs ~D lines, ~D differing~@[ (first: line ~D)~]~%"
++              (length expected) (length got) (length differing) (first differing))
++      (and (null differing) (= (length expected) (length got))))))
++
++;;; Main
++
++(declaim (ftype (function (string boolean list &optional list) boolean) report))
++(defun report (name want results &optional open)
++  "Print how many of RESULTS (id . parsed-p) came out as WANT; true when all
++did, apart from the ids in OPEN."
++  (let* ((unexpected (loop for (id . parsed) in results
++                           unless (eq parsed want) collect id))
++         (failures (set-difference unexpected open :test #'string=)))
++    (format t "~A: ~D/~D as expected~@[; open: ~{~A~^ ~}~]~@[; FAILED: ~{~A~^ ~}~]~%"
++            name (- (length results) (length unexpected)) (length results)
++            (intersection unexpected open :test #'string=) failures)
++    (null failures)))
++
++(let* ((ok-1 (report "codex-correct" t (parse-all (read-cases "codex-correct.txt"))))
++       (ok-2 (report "constructed-correct" t (parse-all (read-cases "constructed-correct.txt"))))
++       (ok-3 (report "known-bad" nil (parse-all (read-cases "known-bad.txt"))
++                     (read-ids "known-bad-open.txt")))
++       (ok-4 (depbank-identical-p)))
++  (finish-output)
++  (sb-ext:exit :code (if (and ok-1 ok-2 ok-3 ok-4) 0 1)))
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tests/codex-correct.txt /home/claude/sbcl-rasp/tests/codex-correct.txt
+--- a/tests/codex-correct.txt	1969-12-31 21:00:00.000000000 -0300
++++ b/tests/codex-correct.txt	2026-10-14 00:28:56.191936958 -0300
+@@ -0,0 +1,81 @@
++s002	The surrounding sentences are summarized in my own words.
++s003	The sentence cites Rizvi et al. (2025) alongside Chen and Zou (2024).
++s004	The preceding sentence defines the cell-sentence as a short, expression-ranked gene list.
++s005	The following sentence explains that the list can omit information needed to identify the cell.
++s006	The sentence again cites Rizvi et al. (2025) and Chen and Zou (2024).
++s007	The preceding sentence describes converting a cell into ranked gene names.
++s008	The next sentence notes that choosing different genes changes accuracy.
++s009	Cell-Lens takes the ranked gene-list interface as an established starting point and criticizes the information it leaves out.
++s010	It retains that interface but adds measurements from paired assays and summaries of markers and biological programs.
++s011	The paper extends how cells are presented to existing language models; its experiments test this richer input without retraining the models.
++s013	The surrounding sentences are summarized in my own words.
++s014	This phrase occurs in the comparison sentence citing Fang et al. (2025) and Rizvi et al. (2025).
++s015	The preceding sentence lists representation baselines for domain alignment.
++s016	The citing sentence lists general-purpose and transcriptomic models used to evaluate specialist training; the next sentence names the metrics for alignment, specialization, and orchestration.
++s017	The sentence cites Levine et al. (2024) and Rizvi et al. (2025), connecting ranked-gene prompts with efficient adaptation and expert training.
++s018	The preceding sentence points to the complete sequence-level definition in Appendix B.1.
++s019	The next prose sentence, at the start of Section 4.3, describes adapting the backbone to a target domain before supervised reasoning.
++s020	scACORN uses C2S-Scale as a comparison model and cites its cell-to-text approach as a methodological foundation.
++s021	It builds small specialists for different tissues and lets an orchestrating language model select and combine their answers.
++s022	The authors report better annotation and gene-supported answers in their evaluations, while arguing that specialist training and coordination can address problems that increasing one model's size leaves unresolved.
++s024	Crossref confirms a reference to C2S-Scale, DOI 10.1101/2025.04.14.648850, under reference key 10.1016/j.scib.2026.09.016_b0290.
++s025	The body passage and its neighboring sentences were unavailable.
++s026	The review surveys AI methods for studying tumor–immune interactions and supporting immunotherapy decisions, including biological language models and virtual cells.
++s027	Its reference list confirms that it cites C2S-Scale.
++s028	The available abstract does not identify the citing passage, so I could not determine whether the authors use its method, discuss a result, or mention it as an example.
++s030	The accessible bibliography lists C2S-Scale as reference 76, with DOI 10.1101/2025.04.14.648850.
++s031	Its body citation and surrounding sentences were unavailable.
++s032	The authors examine how foundation models should be evaluated for reproducibility, generalization, scientific value, and usefulness.
++s033	They include C2S-Scale in the bibliography, but the available abstract does not explain its role.
++s034	Without the body passage, I could not establish whether the paper discusses its results, compares its evaluation methods, or uses it as an example of a biomedical foundation model.
++s036	The citing sentence identifies the Pythia-410M model as ST-ConMa's gene encoder.
++s037	The preceding prose sentence, in the Image encoder subsection, describes the projected image representation.
++s038	The next sentence explains that genes are represented in expression-ranked order and attributes greater robustness to batch effects to that representation.
++s039	ST-ConMa directly reuses a Pythia-410M model trained through the C2S-Scale work.
++s040	Its gene encoder reads the 100 most highly expressed genes at each spatial spot, and the model combines those representations with tissue-image representations.
++s041	The authors use the first twelve Pythia layers and train contrastive and matching objectives for image–gene analysis.
++s042	This is a reuse and extension of the trained representation into spatial transcriptomics.
++s043	Reference 10 within this range is C2S-Scale.
++s044	The preceding sentence introduces Geneformer and scGPT as models trained on large collections of cell profiles.
++s045	The following sentence says prior scaling studies are often qualitative, examine a single architecture, and give limited guidance on hyperparameters.
++s046	The authors cite C2S-Scale among recent studies of scaling in single-cell models.
++s047	They extend that research question through controlled experiments varying model size, context length, learning rate, and depth.
++s048	Ranked gene-identity prediction showed more regular scaling than binned-expression prediction.
++s049	The citation establishes prior work; the paper does not directly benchmark the released C2S-Scale models.
++s050	The preceding sentence describes RNA-sequencing perturbation models as lacking a shared state that accounts for molecular, structural, functional, and phenotypic changes over time.
++s051	The following sentence discusses the strengths and restrictions of mechanistic ordinary-differential-equation models.
++s052	One body citation to reference 10 was found in the preprint.
++s053	The authors cite C2S-Scale as an example of language-based biological modeling.
++s054	They acknowledge reasoning and planning capabilities but argue that a virtual-cell world model must also maintain a biological state, simulate repeated interventions, and generate consistent measurements across modalities.
++s055	They use C2S-Scale to illustrate a partial capability and propose a broader encoder–transition–decoder architecture; this passage provides no experimental comparison with C2S-Scale.
++s057	The full sentence groups references 1 and 6–9, including C2S-Scale, to support the significance and scale of single-cell and spatial sequencing.
++s058	The preceding sentence describes the development of sequencing in dissociated cells and tissue slices.
++s059	The following sentence describes the Human Cell Atlas and applications to disease.
++s060	The citation is a general mention supporting the impact and growing scale of single-cell sequencing.
++s061	Malva searches raw sequences across cell datasets using a sequence index and an API, and it supports natural-language queries through a separate agent.
++s062	The cited passage does not reuse C2S-Scale's trained models or evaluate their performance; it supplies background for Malva's sequence-search problem.
++s063	The authors turned single-cell gene-expression profiles into lists of gene names ordered by expression.
++s064	They combined these lists with biological text and metadata to adapt Pythia and Gemma models, reaching 27 billion parameters.
++s065	They tested cell annotation, biological descriptions, spatial reasoning, and predictions of treatment responses; larger models generally performed better.
++s066	They also screened compounds computationally in two cellular contexts.
++s067	The model nominated silmitasertib as an amplifier of antigen presentation when interferon signaling was present.
++s068	Experiments in patient tumor fragments and independent cell models supported this conditional effect.
++s073	Teaching machines the language of biology: Scaling large language models for next-generation single-cell analysis, Google Research, April 17, 2025.
++s074	David van Dijk and Bryan Perozzi explain how ranked gene names let language models process cell measurements.
++s075	They describe model scaling, question answering, dataset interpretation, and treatment-response prediction.
++s076	Our new C2S-Scale LLM helps researchers have conversations with cells, Google, April 17, 2025.
++s077	This launch announcement introduces the Yale–Google collaboration and its open models.
++s078	It presents natural-language questions about cell identity and drug response as potential uses.
++s079	How a Gemma model helped discover a new potential cancer therapy pathway, Google, October 15, 2025.
++s080	Shekoofeh Azizi and Bryan Perozzi describe screening more than 4,000 compounds in two immune contexts.
++s081	They report experimental support for the predicted combination of silmitasertib and low-dose interferon.
++s082	Researchers from Yale and Google's DeepMind developed Cell2Sentence (C2S), Yale Ventures, October 17, 2025.
++s083	This brief news entry directs readers to coverage of Cell2Sentence.
++s084	The entry itself supplies a headline and an external article link, without a detailed account of the experiments.
++s085	The authors developed PERCEPT to compare treated and untreated tumor–immune cell mixtures from patient resections.
++s086	Single-cell sequencing, MELD, and CINEMA-OT identified treatment responses and resistance.
++s087	SLR14 activated immune programs, while midkine suppressed interferon responses.
++s088	Knockout and co-culture experiments tested that mechanism; patient records linked higher midkine expression to poorer outcomes under checkpoint inhibition.
++s092	Yale Researchers Develop PERCEPT: A Revolutionary Dual-Component System for Precision Oncology, posted by Luciano Lima, December 31, 2025.
++s093	The post connects PERCEPT's patient-tissue experiments with C2S-Scale and discusses counterfactual analysis and midkine.
++s094	It attributes its account to the papers and personal communications; its description of an integrated language-model system goes beyond the workflow documented in this PERCEPT preprint.
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tests/constructed-correct.txt /home/claude/sbcl-rasp/tests/constructed-correct.txt
+--- a/tests/constructed-correct.txt	1969-12-31 21:00:00.000000000 -0300
++++ b/tests/constructed-correct.txt	2026-10-14 00:28:56.191981298 -0300
+@@ -0,0 +1,11 @@
++g09	Its reference list confirms that it cites.
++g10	Its gene encoder reads the most highly expressed genes at each.
++g11	The post connects the experiments with the model and discusses.
++g01	That that is fine.
++g02	He had had enough.
++g03	The light went on on Monday.
++g04	They came in in pairs.
++g05	He gave her her book.
++g06	An apple fell from the tree.
++g07	She was born in 1990 and wrote 76 papers.
++g08	The price rose from under ten dollars to over twenty.
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tests/known-bad-open.txt /home/claude/sbcl-rasp/tests/known-bad-open.txt
+--- a/tests/known-bad-open.txt	1969-12-31 21:00:00.000000000 -0300
++++ b/tests/known-bad-open.txt	2026-10-14 00:30:10.424210852 -0300
+@@ -0,0 +1,3 @@
++; Wrong sentences that RASP still accepts: open problems (see CHANGES.md).
++b13
++b19
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tests/known-bad.txt /home/claude/sbcl-rasp/tests/known-bad.txt
+--- a/tests/known-bad.txt	1969-12-31 21:00:00.000000000 -0300
++++ b/tests/known-bad.txt	2026-10-14 00:28:56.192010081 -0300
+@@ -0,0 +1,27 @@
++b01	The authors the lists of gene names ordered by expression.
++b02	They combined these lists with with biological text and metadata.
++b03	The model nominated silmitasertib as an of antigen presentation.
++b04	Experiments in patient tumor fragments and supported this effect.
++b05	The preceding sentence describes converting a cell into.
++b06	These tools helps me write.
++b07	Cell-Lens takes the ranked interface as a established starting point the.
++b08	The authors cite C2S-Scale among recent studies of of scaling.
++b09	It retains that interface but adds measurements from paired assays and.
++b10	The review surveys methods for studying tumor interactions and supporting the.
++b12	The authors examine how foundation models should be evaluated for for reproducibility.
++b13	ST-ConMa directly a Pythia model trained through the work.
++b14	The citation is a general mention supporting the impact the and growing scale.
++b15	They report experimental support for the predicted of silmitasertib.
++b16	The authors developed PERCEPT to compare treated and untreated mixtures from.
++b17	SLR14 activated immune programs, while midkine suppressed responses interferon the.
++b18	This brief news entry directs readers to to coverage of Cell2Sentence.
++b19	The entry itself supplies a headline and an external article link, without a.
++b20	They describe model scaling, question answering, and the.
++b21	The authors use the first twelve layers and train the objectives for.
++b22	Malva searches raw sequences across cell datasets using a a sequence index.
++b23	The following sentence discusses the strengths and of mechanistic models.
++b25	The sentence cites the paper alongside alongside the review.
++b26	They acknowledge reasoning but argue that a world model must also.
++b27	Ranked gene prediction showed more regular scaling than than binned prediction.
++b29	This is a reuse and extension of the trained representation into into transcriptomics.
++b30	The paper extends how cells are presented to; its experiments test this input.
+diff -ruN '--exclude=third_party' '--exclude=*.out' '--exclude=README' '--exclude=README.rasp-3.3a' '--exclude=README.md' '--exclude=CHANGES.md' '--exclude=docs' '--exclude=.github' '--exclude=.gitignore' '--exclude=morpha.yy.c' '--exclude=check-parc.fasl' pr/rasp3os/tokenise/token.flex /home/claude/sbcl-rasp/tokenise/token.flex
+--- a/tokenise/token.flex	2020-12-15 16:02:19.000000000 -0300
++++ b/tokenise/token.flex	2026-10-13 10:25:02.000000000 -0300
+@@ -144,7 +144,7 @@
+   /* Rule added for cases where the leading punctuation is not separated from the previous token, i.e.: "word1(word2 word3)"
+      {lead}                      {etok(" "); tok(); etok(" ");}*/
+ {alphanum}{leftbracket}{alphanum}*{rightbracket} {tok(); etok(" ");}
+-{alphanum}/{leftbracket}{alphanum} {tok(); etok(" ");}
++({alphanum})/({leftbracket})({alphanum}) {tok(); etok(" ");}
+ 
+   /* Trailing punctuation: insert blank before, unless ; at end of entity */
+ 

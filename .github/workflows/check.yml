@@ -1,0 +1,25 @@
+# Build sbcl-rasp from a clean checkout and run the tests, on Linux and macOS.
+# The machines get only what a user needs: SBCL, a C compiler and make.
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SBCL
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then brew install sbcl
+          else sudo apt-get update && sudo apt-get install -y sbcl; fi
+      - name: Build
+        run: make
+      - name: Test
+        run: make check

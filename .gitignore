@@ -1,0 +1,8 @@
+# built by make
+/bin/
+*.yy.c
+*.o
+*.a
+*.fasl
+/tag/auxiliary_files/seclarge-c2s.lex
+.DS_Store

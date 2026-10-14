@@ -1,0 +1,11 @@
+g09	Its reference list confirms that it cites.
+g10	Its gene encoder reads the most highly expressed genes at each.
+g11	The post connects the experiments with the model and discusses.
+g01	That that is fine.
+g02	He had had enough.
+g03	The light went on on Monday.
+g04	They came in in pairs.
+g05	He gave her her book.
+g06	An apple fell from the tree.
+g07	She was born in 1990 and wrote 76 papers.
+g08	The price rose from under ten dollars to over twenty.

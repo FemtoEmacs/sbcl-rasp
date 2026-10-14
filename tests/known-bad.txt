@@ -1,0 +1,27 @@
+b01	The authors the lists of gene names ordered by expression.
+b02	They combined these lists with with biological text and metadata.
+b03	The model nominated silmitasertib as an of antigen presentation.
+b04	Experiments in patient tumor fragments and supported this effect.
+b05	The preceding sentence describes converting a cell into.
+b06	These tools helps me write.
+b07	Cell-Lens takes the ranked interface as a established starting point the.
+b08	The authors cite C2S-Scale among recent studies of of scaling.
+b09	It retains that interface but adds measurements from paired assays and.
+b10	The review surveys methods for studying tumor interactions and supporting the.
+b12	The authors examine how foundation models should be evaluated for for reproducibility.
+b13	ST-ConMa directly a Pythia model trained through the work.
+b14	The citation is a general mention supporting the impact the and growing scale.
+b15	They report experimental support for the predicted of silmitasertib.
+b16	The authors developed PERCEPT to compare treated and untreated mixtures from.
+b17	SLR14 activated immune programs, while midkine suppressed responses interferon the.
+b18	This brief news entry directs readers to to coverage of Cell2Sentence.
+b19	The entry itself supplies a headline and an external article link, without a.
+b20	They describe model scaling, question answering, and the.
+b21	The authors use the first twelve layers and train the objectives for.
+b22	Malva searches raw sequences across cell datasets using a a sequence index.
+b23	The following sentence discusses the strengths and of mechanistic models.
+b25	The sentence cites the paper alongside alongside the review.
+b26	They acknowledge reasoning but argue that a world model must also.
+b27	Ranked gene prediction showed more regular scaling than than binned prediction.
+b29	This is a reuse and extension of the trained representation into into transcriptomics.
+b30	The paper extends how cells are presented to; its experiments test this input.

@@ -1,0 +1,81 @@
+s002	The surrounding sentences are summarized in my own words.
+s003	The sentence cites Rizvi et al. (2025) alongside Chen and Zou (2024).
+s004	The preceding sentence defines the cell-sentence as a short, expression-ranked gene list.
+s005	The following sentence explains that the list can omit information needed to identify the cell.
+s006	The sentence again cites Rizvi et al. (2025) and Chen and Zou (2024).
+s007	The preceding sentence describes converting a cell into ranked gene names.
+s008	The next sentence notes that choosing different genes changes accuracy.
+s009	Cell-Lens takes the ranked gene-list interface as an established starting point and criticizes the information it leaves out.
+s010	It retains that interface but adds measurements from paired assays and summaries of markers and biological programs.
+s011	The paper extends how cells are presented to existing language models; its experiments test this richer input without retraining the models.
+s013	The surrounding sentences are summarized in my own words.
+s014	This phrase occurs in the comparison sentence citing Fang et al. (2025) and Rizvi et al. (2025).
+s015	The preceding sentence lists representation baselines for domain alignment.
+s016	The citing sentence lists general-purpose and transcriptomic models used to evaluate specialist training; the next sentence names the metrics for alignment, specialization, and orchestration.
+s017	The sentence cites Levine et al. (2024) and Rizvi et al. (2025), connecting ranked-gene prompts with efficient adaptation and expert training.
+s018	The preceding sentence points to the complete sequence-level definition in Appendix B.1.
+s019	The next prose sentence, at the start of Section 4.3, describes adapting the backbone to a target domain before supervised reasoning.
+s020	scACORN uses C2S-Scale as a comparison model and cites its cell-to-text approach as a methodological foundation.
+s021	It builds small specialists for different tissues and lets an orchestrating language model select and combine their answers.
+s022	The authors report better annotation and gene-supported answers in their evaluations, while arguing that specialist training and coordination can address problems that increasing one model's size leaves unresolved.
+s024	Crossref confirms a reference to C2S-Scale, DOI 10.1101/2025.04.14.648850, under reference key 10.1016/j.scib.2026.09.016_b0290.
+s025	The body passage and its neighboring sentences were unavailable.
+s026	The review surveys AI methods for studying tumor–immune interactions and supporting immunotherapy decisions, including biological language models and virtual cells.
+s027	Its reference list confirms that it cites C2S-Scale.
+s028	The available abstract does not identify the citing passage, so I could not determine whether the authors use its method, discuss a result, or mention it as an example.
+s030	The accessible bibliography lists C2S-Scale as reference 76, with DOI 10.1101/2025.04.14.648850.
+s031	Its body citation and surrounding sentences were unavailable.
+s032	The authors examine how foundation models should be evaluated for reproducibility, generalization, scientific value, and usefulness.
+s033	They include C2S-Scale in the bibliography, but the available abstract does not explain its role.
+s034	Without the body passage, I could not establish whether the paper discusses its results, compares its evaluation methods, or uses it as an example of a biomedical foundation model.
+s036	The citing sentence identifies the Pythia-410M model as ST-ConMa's gene encoder.
+s037	The preceding prose sentence, in the Image encoder subsection, describes the projected image representation.
+s038	The next sentence explains that genes are represented in expression-ranked order and attributes greater robustness to batch effects to that representation.
+s039	ST-ConMa directly reuses a Pythia-410M model trained through the C2S-Scale work.
+s040	Its gene encoder reads the 100 most highly expressed genes at each spatial spot, and the model combines those representations with tissue-image representations.
+s041	The authors use the first twelve Pythia layers and train contrastive and matching objectives for image–gene analysis.
+s042	This is a reuse and extension of the trained representation into spatial transcriptomics.
+s043	Reference 10 within this range is C2S-Scale.
+s044	The preceding sentence introduces Geneformer and scGPT as models trained on large collections of cell profiles.
+s045	The following sentence says prior scaling studies are often qualitative, examine a single architecture, and give limited guidance on hyperparameters.
+s046	The authors cite C2S-Scale among recent studies of scaling in single-cell models.
+s047	They extend that research question through controlled experiments varying model size, context length, learning rate, and depth.
+s048	Ranked gene-identity prediction showed more regular scaling than binned-expression prediction.
+s049	The citation establishes prior work; the paper does not directly benchmark the released C2S-Scale models.
+s050	The preceding sentence describes RNA-sequencing perturbation models as lacking a shared state that accounts for molecular, structural, functional, and phenotypic changes over time.
+s051	The following sentence discusses the strengths and restrictions of mechanistic ordinary-differential-equation models.
+s052	One body citation to reference 10 was found in the preprint.
+s053	The authors cite C2S-Scale as an example of language-based biological modeling.
+s054	They acknowledge reasoning and planning capabilities but argue that a virtual-cell world model must also maintain a biological state, simulate repeated interventions, and generate consistent measurements across modalities.
+s055	They use C2S-Scale to illustrate a partial capability and propose a broader encoder–transition–decoder architecture; this passage provides no experimental comparison with C2S-Scale.
+s057	The full sentence groups references 1 and 6–9, including C2S-Scale, to support the significance and scale of single-cell and spatial sequencing.
+s058	The preceding sentence describes the development of sequencing in dissociated cells and tissue slices.
+s059	The following sentence describes the Human Cell Atlas and applications to disease.
+s060	The citation is a general mention supporting the impact and growing scale of single-cell sequencing.
+s061	Malva searches raw sequences across cell datasets using a sequence index and an API, and it supports natural-language queries through a separate agent.
+s062	The cited passage does not reuse C2S-Scale's trained models or evaluate their performance; it supplies background for Malva's sequence-search problem.
+s063	The authors turned single-cell gene-expression profiles into lists of gene names ordered by expression.
+s064	They combined these lists with biological text and metadata to adapt Pythia and Gemma models, reaching 27 billion parameters.
+s065	They tested cell annotation, biological descriptions, spatial reasoning, and predictions of treatment responses; larger models generally performed better.
+s066	They also screened compounds computationally in two cellular contexts.
+s067	The model nominated silmitasertib as an amplifier of antigen presentation when interferon signaling was present.
+s068	Experiments in patient tumor fragments and independent cell models supported this conditional effect.
+s073	Teaching machines the language of biology: Scaling large language models for next-generation single-cell analysis, Google Research, April 17, 2025.
+s074	David van Dijk and Bryan Perozzi explain how ranked gene names let language models process cell measurements.
+s075	They describe model scaling, question answering, dataset interpretation, and treatment-response prediction.
+s076	Our new C2S-Scale LLM helps researchers have conversations with cells, Google, April 17, 2025.
+s077	This launch announcement introduces the Yale–Google collaboration and its open models.
+s078	It presents natural-language questions about cell identity and drug response as potential uses.
+s079	How a Gemma model helped discover a new potential cancer therapy pathway, Google, October 15, 2025.
+s080	Shekoofeh Azizi and Bryan Perozzi describe screening more than 4,000 compounds in two immune contexts.
+s081	They report experimental support for the predicted combination of silmitasertib and low-dose interferon.
+s082	Researchers from Yale and Google's DeepMind developed Cell2Sentence (C2S), Yale Ventures, October 17, 2025.
+s083	This brief news entry directs readers to coverage of Cell2Sentence.
+s084	The entry itself supplies a headline and an external article link, without a detailed account of the experiments.
+s085	The authors developed PERCEPT to compare treated and untreated tumor–immune cell mixtures from patient resections.
+s086	Single-cell sequencing, MELD, and CINEMA-OT identified treatment responses and resistance.
+s087	SLR14 activated immune programs, while midkine suppressed interferon responses.
+s088	Knockout and co-culture experiments tested that mechanism; patient records linked higher midkine expression to poorer outcomes under checkpoint inhibition.
+s092	Yale Researchers Develop PERCEPT: A Revolutionary Dual-Component System for Precision Oncology, posted by Luciano Lima, December 31, 2025.
+s093	The post connects PERCEPT's patient-tissue experiments with C2S-Scale and discusses counterfactual analysis and midkine.
+s094	It attributes its account to the papers and personal communications; its description of an integrated language-model system goes beyond the workflow documented in this PERCEPT preprint.
