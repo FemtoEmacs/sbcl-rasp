@@ -9,6 +9,8 @@ APP := Browsered.app
 # Homebrew prefix, if any, for libcmark-gfm
 BREW := $(shell brew --prefix 2>/dev/null)
 LIBDIRS := $(if $(BREW),-I$(BREW)/include -L$(BREW)/lib)
+# Homebrew splits the GFM extensions into a second library; link it when present
+EXTLIB := $(if $(wildcard $(BREW)/lib/libcmark-gfm-extensions.*),-lcmark-gfm-extensions)
 RESOURCES := Browsered.html keys.js scheme.js editor.scm init.scm \
     femtoscheme/wasm/femtoscheme.js assistant-schema.json formatting.xml \
     browser-tests.html browser-tests.js
@@ -26,7 +28,7 @@ $(APP)/Contents/MacOS/browsered: browsered.c assistant.c sources.c pdf.c $(RESOU
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cc -std=c11 -Wall -Wextra -Werror -O2 browsered.c assistant.c sources.c pdf.c \
 	    -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework PDFKit \
-	    $(LIBDIRS) -lxml2 -lcmark-gfm -o $@
+	    $(LIBDIRS) -lxml2 -lcmark-gfm $(EXTLIB) -o $@
 	cp $(RESOURCES) $(APP)/Contents/Resources/
 
 check:
