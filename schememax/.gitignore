@@ -1,0 +1,26 @@
+# -*- conf -*-
+# Build products
+*.o
+*.a
+*.do
+*.dylib
+*.so
+schememax
+schememax-gui
+Schememax.app/
+femtoscheme/femtoscheme
+tests/search-test
+tests/highlight-test
+# Backups of edited files
+bkp/
+.dir-locals.el
+irene-dixe
+# Private and copyrighted material (the proposal to NAIA, journal PDFs)
+NAIA-tst/
+# Scratch
+teste.lisp
+# Full transcriptions of copyrighted papers (TTFY test material)
+ttfy/benedetto.md
+ttfy/codex-tests/
+ttfy/rama/
+ttfy/rama.zip

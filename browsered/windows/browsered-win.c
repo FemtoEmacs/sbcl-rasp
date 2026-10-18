@@ -57,10 +57,11 @@ static const struct PublicFile public_files[] = {
 };
 
 /* Same instructions as assistant.c. */
-static const char instructions[] =
+#include "../runtime-policy.h"
+static const char instructions[] = BROWSERED_USER_TOOL_POLICY
     "You are Browsered's assistant. Carry out the request and produce the result, not a lesson "
-    "on how to do it. Write the reply in the language of the user's request. Work only with the "
-    "text provided: do not read files, run commands or use tools. The current buffer is the text "
+    "on how to do it. Write the reply in the language of the user's request. Work with the "
+    "text provided and all available tools for the authorized task. The current buffer is the text "
     "in the user's editor. To change it (edit, rewrite, translate, insert, delete or clear), put "
     "its complete new text in buffer: Browsered replaces the editor's text with it, and the user "
     "can undo the change with Ctrl+/. To leave the editor unchanged, set buffer to null. When the "
@@ -328,9 +329,7 @@ static char *run_claude(const char *request, size_t length)
     if (!find_program(L"claude", claude)) return NULL;
     struct Workspace w;
     if (!create_workspace(&w)) return NULL;
-    const wchar_t *const args[] = {L"-p", L"--output-format", L"json", L"--disallowedTools",
-        L"Bash", L"Edit", L"MultiEdit", L"Write", L"NotebookEdit", L"Read", L"Glob", L"Grep",
-        L"WebFetch", L"WebSearch", L"Task", L"Agent", NULL};
+    const wchar_t *const args[] = {L"-p", L"--output-format", L"json", NULL};
     const char *const parts[] = {instructions, claude_format, NULL};
     char *answer = NULL;
     size_t size;
@@ -351,7 +350,7 @@ static char *run_codex(const char *request, size_t length)
     struct Workspace w;
     if (!create_workspace(&w)) return NULL;
     const wchar_t *const args[] = {L"exec", L"--ephemeral", L"--skip-git-repo-check",
-        L"--sandbox", L"read-only", L"--cd", w.root, L"--output-schema", schema,
+        L"--cd", w.root, L"--output-schema", schema,
         L"--output-last-message", w.result, L"-", NULL};
     const char *const parts[] = {instructions, NULL};
     char *answer = NULL;

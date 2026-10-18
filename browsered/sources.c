@@ -367,13 +367,13 @@ int browsered_fetch_sources(const char *text, size_t length, const char *directo
         snprintf(notes, notes_size,
             "This request names no source. The most recent source used in Browsered is %s; "
             "its text is %s in your working directory (read it with the Read tool; it is the "
-            "only file you may read). Use it when the request concerns that source.\n\n",
+            "cached source copy, not a file-access restriction). Use it when relevant.\n\n",
             name, text_name);
         return 1;
     }
     size_t used = (size_t)snprintf(notes, notes_size,
         "Sources Browsered fetched for this request, in your working directory "
-        "(read them with the Read tool; these are the only files you may read):\n");
+        "(read with available file tools; these copies do not restrict other authorized reads):\n");
     int ready = 0;
     for (int index = 0; index < count && used < notes_size; ++index) {
         char text_name[64];

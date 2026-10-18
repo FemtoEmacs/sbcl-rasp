@@ -46,6 +46,49 @@
   };
 
 
+  function naiaTextPrompt(text) {
+    return 'Response format: write the complete answer directly in this chat as Markdown text. ' +
+      'Do not create a document, attachment, downloadable file, or download link. ' +
+      'Browsered will save your chat response as a Markdown file. Answer the question below.\n\n' + text;
+  }
+
+  function naiaMarkdown(answer, id = '') {
+    return {name: 'NAIA' + (id ? '-Q' + id : '-resposta') + '.md',
+      format: 'md', content: '# Resposta do NAIA' + (id ? ' — Q' + id : '') + '\n\n' + answer + '\n'};
+  }
+
+  // Resolve ordinary question+paper submissions without asking an AI to upload.
+  function naiaSubmission(request, documentText) {
+    if (!/\bNAIA\b/i.test(request) ||
+        !/\b(send|ask|present|submit|submeter|submeta|enviar|envie|apresentar|perguntar)\b/i.test(request)) return null;
+    const ids = [...documentText.matchAll(/^(?:\*\*)?Q(\d+)[.:]/gm)].map(m => m[1]);
+    const id = /\bQ(\d+)\b/i.exec(request)?.[1] || (ids.length === 1 ? ids[0] : null);
+    if (!id) throw new Error('Indique a pergunta Q no pedido ou deixe uma única pergunta no documento.');
+    const lines = documentText.split('\n');
+    const heading = new RegExp(`^(?:\\*\\*)?Q${id}[.:](?:\\*\\*)?\\s*(.*)$`);
+    const index = lines.findIndex(line => heading.test(line));
+    if (index < 0) throw new Error(`Q${id} não encontrada; nada enviado.`);
+    let end = index + 1;
+    while (end < lines.length && lines[end].trim() && !/^\*\*Q\d+|^Q\d+:|^#/.test(lines[end])) end++;
+    const question = [lines[index].match(heading)[1], ...lines.slice(index + 1, end)].join('\n');
+    const withPaper = /\b(paper|artigo|documento|document)\b/i.test(request) ||
+      /\x3c!--\s*TTFY|Paper supplied for consultation:/i.test(documentText);
+    if (withPaper && !documentText.slice(end ? lines.slice(0,end).join('\n').length : 0).trim())
+      throw new Error('O artigo não está no buffer. Abra o documento com a pergunta e o artigo em texto.');
+    return {id, prompt: withPaper ? documentText : question, withPaper};
+  }
+
+  // The extension must describe the actual bytes, never an invented DOCX.
+  function artifactMetadata(artifact) {
+    const types = {pdf: 'application/pdf', txt: 'text/plain;charset=utf-8',
+      md: 'text/markdown;charset=utf-8', csv: 'text/csv;charset=utf-8',
+      html: 'text/html;charset=utf-8'};
+    const format = Object.hasOwn(types, artifact.format) ? artifact.format : 'txt';
+    const raw = artifact.name.replace(/[\\/\x00-\x1f]/g, '_');
+    const stem = raw.replace(/\.[^.]*$/, '').replace(/[. ]+$/, '') || 'answer';
+    return {name: stem + '.' + format, type: types[format]};
+  }
+
   // Repeated extension clicks toggle one listener, rather than adding copies.
   const stateKey = "__browseredEmacsKeys";
   if (globalThis[stateKey]) {
@@ -474,7 +517,7 @@
       "h1,h2,h3{line-height:1.2}table{border-collapse:collapse}td,th{border:1px solid #999;padding:4px 8px}" +
       "pre{background:#f4f4f4;padding:8px;white-space:pre-wrap}blockquote{margin-left:1em;padding-left:1em;border-left:3px solid #ccc}" +
       "@media print{body{margin:0}}</style>" + markdownToHtml(markdown) +
-      "<script>addEventListener('load',()=>setTimeout(()=>print(),300))<\/script></html>";
+      "\x3cscript>addEventListener('load',()=>setTimeout(()=>print(),300))<\/script></html>";
   }
 
   function openQuestionDialog(provider) {
@@ -581,6 +624,7 @@
   }
 
   async function helperPost(path, body) {
+    if (path === "/naia") body = naiaTextPrompt(body);
     if (!nativeHelper) throw new Error("NAIA and the autoclave need Browsered.app on the Mac.");
     const response = await fetch(path, {
       method: "POST",
@@ -596,25 +640,58 @@
     return response;
   }
 
+  let naiaMarkdownURL = null;
+  function offerNaiaMarkdown(button, artifact) {
+    if (naiaMarkdownURL) URL.revokeObjectURL(naiaMarkdownURL);
+    document.getElementById('naia-markdown-download')?.remove();
+    naiaMarkdownURL = URL.createObjectURL(new Blob([artifact.content],
+      {type: 'text/markdown;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.id = 'naia-markdown-download';
+    link.href = naiaMarkdownURL;
+    link.download = artifact.name;
+    link.textContent = 'Salvar Markdown: ' + artifact.name;
+    link.style.cssText = 'display:inline-block;margin:8px';
+    button.after(link);
+  }
+
   async function sendTestToNaia(button) {
     const editor = document.getElementById("editor") || lastEditor;
     if (!editor) return;
     const questions = testQuestions(editor.value);
     if (!questions.length) {
-      showStatus("No unanswered question: the buffer needs an autoclave test with empty NAIA lines.");
+      const source = editor.value;
+      if (!source.trim()) { showStatus('Documento vazio; nada enviado.'); return; }
+      if (!window.confirm(`Enviar o documento inteiro (pergunta + artigo) como texto para NAIA (naia.med.br)?\n${source.length} caracteres.`)) return;
+      button.disabled = true;
+      try {
+        showStatus('Enviando pergunta + artigo ao NAIA…');
+        const response = await helperPost('/naia', source);
+        const result = await response.json();
+        const diagnostics = response.headers.get('X-Browsered-Diagnostics') || '';
+        if (result.error) throw new Error(result.error + '\nDiagnostics: ' + diagnostics);
+        if (typeof result.answer !== 'string' || !result.answer.trim()) throw new Error('NAIA não devolveu resposta.');
+        if (editor.value !== source) throw new Error('O buffer mudou; resposta preservada nos diagnósticos: ' + diagnostics);
+        offerNaiaMarkdown(button, naiaMarkdown(result.answer));
+        showStatus('NAIA respondeu; use Salvar Markdown. Buffer preservado.');
+      } catch (error) { showStatus(error.message); }
+      finally { button.disabled = false; }
       return;
+
     }
     button.disabled = true;
     try {
+      let answeredText = editor.value;
       for (const [index, question] of questions.entries()) {
         showStatus(`Asking NAIA question ${question.number} (${index + 1} of ${questions.length})…`);
         const result = await (await helperPost("/naia", question.text + quoteRequest)).json();
         if (result.error) throw new Error(result.error);
         const answer = String(result.answer || "").trim().split("\n").join("\n  ");
         const slot = new RegExp(`^NAIA${question.number}:[ \\t]*$`, "m");
-        replaceBuffer(editor, editor.value.replace(slot, () => `NAIA${question.number}: ${answer}`));
+        answeredText = answeredText.replace(slot, () => `NAIA${question.number}: ${answer}`);
       }
-      showStatus(`NAIA answered ${questions.length} question(s). Press Autoclave to check the quotations.`);
+      offerNaiaMarkdown(button, {name: 'NAIA-autoclave.md', format: 'md', content: answeredText});
+      showStatus(`NAIA answered ${questions.length} question(s). Save Markdown; buffer unchanged.`);
     } catch (error) {
       showStatus(error.message);
     } finally {
@@ -665,7 +742,25 @@
       const requested = assistant;
       const request = "User's request:\n" + question + "\n\nCurrent buffer:\n" + documentText;
       let result;
-      if (!nativeHelper) {
+      const submission = naiaSubmission(question, documentText);
+      if (submission) {
+        const {id, prompt, withPaper} = submission;
+        if (!window.confirm(`Enviar Q${id}${withPaper ? ' e o artigo completo' : ''} como texto para NAIA (naia.med.br)?\n${prompt.length} caracteres.\n\n${prompt.slice(0,500)}`)) {
+          showStatus('Envio ao NAIA cancelado; nada enviado.');
+          assistantResult.textContent = 'Cancelado; buffer preservado.';
+          return;
+        }
+        showStatus(`Enviando Q${id}${withPaper ? ' + artigo' : ''} ao NAIA…`);
+        const response = await helperPost('/naia', prompt);
+        const external = await response.json();
+        const diagnostics = response.headers.get('X-Browsered-Diagnostics') || '';
+        if (external.error) throw new Error(external.error + '\nDiagnostics: ' + diagnostics);
+        if (typeof external.answer !== 'string' || !external.answer.trim()) throw new Error('NAIA não devolveu uma resposta.');
+        if (target.value !== documentText) throw new Error('O buffer mudou; resposta preservada nos diagnósticos: ' + diagnostics);
+        result = {reply: `NAIA respondeu Q${id}.\nDiagnostics: ${diagnostics}`,
+          buffer: null, artifacts: [naiaMarkdown(external.answer, id)]};
+        showStatus(`NAIA Q${id}: concluído`);
+      } else if (!nativeHelper) {
         result = await askApi(requested === assistants.claude ? "claude" : "chatgpt", request);
       } else {
         const response = await fetch(requested.endpoint, {
@@ -696,6 +791,24 @@
       let printPdf = !nativeHelper;
       for (let artifact of result.artifacts) {
         if (typeof artifact.content !== "string" || typeof artifact.name !== "string") continue;
+        const suppliedName = artifact.name;
+        let metadata = artifactMetadata(artifact);
+        artifact = {...artifact, name: metadata.name};
+        const preview = document.createElement('details');
+        const caption = document.createElement('summary');
+        caption.textContent = 'Ver texto: ' + artifact.name;
+        const text = document.createElement('textarea');
+        text.readOnly = true;
+        text.value = artifact.content;
+        text.setAttribute('aria-label', 'Generated answer text');
+        text.style.cssText = 'display:block;width:100%;min-height:240px;margin-top:8px';
+        preview.append(caption, text);
+        assistantResult.appendChild(preview);
+        if (suppliedName !== artifact.name) {
+          const notice = document.createElement('p');
+          notice.textContent = 'Nome corrigido para o formato real: ' + artifact.name;
+          assistantResult.appendChild(notice);
+        }
         let file = null;
         if (artifact.format === "pdf" && !printPdf) {
           const rendered = await fetch("/pdf", {
@@ -724,7 +837,8 @@
           file = new Blob([artifact.content], {type: "text/markdown;charset=utf-8"});
           artifact = {...artifact, name: name + ".md"};
         }
-        if (!file) file = new Blob([artifact.content], {type: "text/plain;charset=utf-8"});
+        metadata = artifactMetadata(artifact);
+        if (!file) file = new Blob([artifact.content], {type: metadata.type});
         const url = URL.createObjectURL(file);
         artifactURLs.push(url);
         const download = document.createElement("a");
@@ -919,6 +1033,10 @@
     systemClipboard: true,
     bindings,
     movement,
+    artifactMetadata,
+    naiaSubmission,
+    naiaMarkdown,
+    naiaTextPrompt,
     toggleHelp,
 
     // For scheme.js: the editing primitives behind Scheme's buffer API.

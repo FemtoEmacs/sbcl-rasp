@@ -58,3 +58,49 @@ develop the product for sale, distribution or their own use is free to do so.
 Claude Code, Codex, OpenEvidence algorithmosque probanda. Si quis ex eo
 mercem facere voluerit, ut vendat, distribuat vel ipse utatur, libere faciat.
 
+
+## End-user tools: policy update (2026-10-17)
+
+The earlier tool-denial/read-only adapter description is superseded.
+Development dependencies do not restrict end-user tasks. All available tools
+may be used under normal provider permissions. The policy is automatically
+prepended to EVERY request, and fresh macOS request workspaces get AGENTS.md
+and CLAUDE.md containing it. Source copies no longer carry a file whitelist.
+See USER-TOOLS.md for details. Restart the native helper after rebuilding.
+
+Generated-file links now use an extension and MIME type matching the actual
+format: Markdown is .md and plain text is .txt. A supplied .docx name cannot
+turn text into a Word file. Each generated artifact also has a 'Ver texto'
+preview in the answer dialog, where its source text can be read and selected.
+This fixes export correctness; it does not establish the cause of a browser
+security block or change Chrome's download protections.
+
+### NAIA: pergunta acompanhada do artigo em texto (2026-10-18)
+
+Abra no buffer o documento com a pergunta e o artigo completo em Markdown.
+O botão NAIA agora também aceita esse documento comum, além do formato de
+Autoclave. A confirmação informa o destino e o número de caracteres; o
+helper envia uma mensagem de texto e acrescenta a resposta sem substituir
+o artigo. Não há anexação automática. Erros preservam o buffer e o caminho
+de diagnóstico, sem repetir o envio automaticamente.
+
+Nos pedidos ao ChatGPT/Claude, "Submeter a pergunta com o paper ao NAIA"
+é reconhecido também em português. Uma única Q no buffer é identificada
+sem exigir repetir seu número no pedido. Quando solicitado o artigo, o
+texto completo segue junto, em vez de apenas a primeira linha da pergunta.
+Uma recusa externa de permissão deve ser preservada e informada; esta
+implementação não desativa nem altera políticas do navegador/provedor.
+
+As respostas do NAIA agora oferecem Markdown para salvar. Pelo diálogo do
+ChatGPT/Claude, a resposta vem com o arquivo NAIA-Q<num>.md. Pelo botão NAIA,
+o link "Salvar Markdown" aparece ao lado do botão. No Autoclave, o arquivo
+inclui o teste completo com suas respostas. O buffer continua disponível.
+
+Atualização: as respostas do NAIA NÃO alteram nem são acrescentadas ao buffer.
+O diálogo oferece NAIA-Q<num>.md para salvar; o botão NAIA mostra "Salvar
+Markdown". No Autoclave, o teste preenchido é disponibilizado somente no
+arquivo Markdown. Isso substitui o comportamento de inserção descrito acima.
+
+Toolbar repair (2026-10-18): escape HTML comment/script opening tokens in embedded JavaScript. Validate the standalone page as well as the separate-script test harness.
+
+All NAIA requests explicitly require complete Markdown in the chat, without attachments or download links. Browsered creates the downloadable .md locally from that reply and preserves the buffer.

@@ -13,7 +13,7 @@ LIBDIRS := $(if $(BREW),-I$(BREW)/include -L$(BREW)/lib)
 EXTLIB := $(if $(wildcard $(BREW)/lib/libcmark-gfm-extensions.*),-lcmark-gfm-extensions)
 RESOURCES := Browsered.html keys.js scheme.js editor.scm init.scm \
     femtoscheme/wasm/femtoscheme.js assistant-schema.json formatting.xml \
-    browser-tests.html browser-tests.js
+    browser-tests.html browser-tests.js USER-TOOLS.md
 
 .PHONY: all check clean
 
@@ -24,7 +24,7 @@ all:
 	@echo "Browsered: open browsered/Browsered.html in Chrome or Edge (the helper is built on macOS and Windows)."
 endif
 
-$(APP)/Contents/MacOS/browsered: browsered.c assistant.c sources.c pdf.c $(RESOURCES)
+$(APP)/Contents/MacOS/browsered: browsered.c assistant.c runtime-policy.h sources.c pdf.c $(RESOURCES)
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cc -std=c11 -Wall -Wextra -Werror -O2 browsered.c assistant.c sources.c pdf.c \
 	    -framework CoreFoundation -framework CoreGraphics -framework CoreText -framework PDFKit \

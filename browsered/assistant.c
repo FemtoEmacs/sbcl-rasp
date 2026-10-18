@@ -1,5 +1,5 @@
 /* Background assistant adapters for Codex and Claude Code.
- * No shell, self-approval, or browser windows. Each request runs from a
+ * Uses installed providers under their normal permissions. Each request runs from a
  * private temporary workspace that is removed when the request finishes. */
 #include <dirent.h>
 #include <errno.h>
@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "runtime-policy.h"
 extern char **environ;
 
 #define MAX_ANSWER (8L * 1024 * 1024)
@@ -44,10 +45,10 @@ int browsered_fetch_sources(const char *text, size_t length, const char *directo
     "autoclave report marks NOT FOUND is fabricated: say so in that SCORE line. End with a " \
     "line SUMMARY: counts of each score and of fabricated quotations.\n\n"
 
-static const char instructions[] =
+static const char instructions[] = BROWSERED_USER_TOOL_POLICY
     "You are Browsered's assistant. Carry out the request and produce the result, not a lesson "
-    "on how to do it. Write the reply in the language of the user's request. Work only with the "
-    "text provided and with the source files listed below, if any: read no other files, and do not run commands or use other tools. The current buffer is the text "
+    "on how to do it. Write the reply in the language of the user's request. Work with the "
+    "text provided and all available tools and user-authorized files as needed. The current buffer is the text "
     "in the user's editor. To change it (edit, rewrite, translate, insert, delete or clear), put "
     "its complete new text in buffer: Browsered replaces the editor's text with it, and the user "
     "can undo the change with Ctrl+/. To leave the editor unchanged, set buffer to null. When the "
@@ -82,6 +83,15 @@ static bool create_workspace(struct Workspace *workspace)
     snprintf(workspace->prompt, sizeof(workspace->prompt), "%s/request.txt", workspace->root);
     snprintf(workspace->result, sizeof(workspace->result), "%s/result.json", workspace->root);
     snprintf(workspace->log, sizeof(workspace->log), "%s/log.txt", workspace->root);
+    const char *names[] = {"AGENTS.md", "CLAUDE.md"};
+    for (size_t i=0; i<2; ++i) {
+        char path[PATH_MAX];
+        snprintf(path,sizeof(path),"%s/%s",workspace->root,names[i]);
+        FILE *file=fopen(path,"wx");
+        if (!file) return false;
+        bool ok=fputs(BROWSERED_USER_TOOL_POLICY,file)>=0;
+        if (fclose(file)!=0 || !ok) return false;
+    }
     return true;
 }
 
@@ -172,7 +182,7 @@ char *browsered_run_assistant(const char *request, size_t length, const char *re
     char schema_path[PATH_MAX];
     snprintf(schema_path, sizeof(schema_path), "%s/assistant-schema.json", resources);
     char *arguments[] = {(char *)codex, "exec", "--ephemeral", "--skip-git-repo-check",
-        "--sandbox", "read-only", "--cd", workspace.root, "--output-schema", schema_path,
+        "--cd", workspace.root, "--output-schema", schema_path,
         "--output-last-message", workspace.result, "-", NULL};
     char notes[4096];
     browsered_fetch_sources(request, length, workspace.root, notes, sizeof(notes));
@@ -227,9 +237,9 @@ static char **claude_environment(const char *home, char *path_variable, size_t s
 }
 
 /* Claude Code in print mode, through the user's existing Claude login.
- * Tools that write, run commands, or browse are disallowed. Claude sees the
- * request and document, and may read only the files in its private working
- * directory: the sources Browsered fetched for this request, if any.
+ * No Browsered tool denylist is applied; normal provider permissions apply. Claude sees the
+ * request and document, and may use authorized files beyond its working
+ * directory. Source copies are conveniences, not an access whitelist.
  * The browser receives Claude Code's JSON envelope and extracts the reply. */
 char *browsered_run_claude(const char *request, size_t length)
 {
@@ -242,8 +252,7 @@ char *browsered_run_claude(const char *request, size_t length)
     char path_variable[PATH_MAX + 128];
     char **environment = claude_environment(home, path_variable, sizeof(path_variable));
     char *arguments[] = {claude, "-p", "--output-format", "json",
-        "--disallowedTools", "Bash", "Edit", "MultiEdit", "Write", "NotebookEdit",
-        "WebFetch", "WebSearch", "Task", "Agent", NULL};
+        NULL};
     char notes[4096];
     browsered_fetch_sources(request, length, workspace.root, notes, sizeof(notes));
     const char *const parts[] = {instructions, claude_format, notes, NULL};

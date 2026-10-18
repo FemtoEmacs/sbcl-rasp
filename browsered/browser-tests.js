@@ -28,6 +28,32 @@ try {
   // Keep tests independent of the system clipboard and its permission prompt.
   globalThis.__browseredEmacsKeys.systemClipboard = false;
   const movement = globalThis.__browseredEmacsKeys.movement;
+  const inlinePrompt = globalThis.__browseredEmacsKeys.naiaTextPrompt('Question and full paper');
+  expect(inlinePrompt.endsWith('Question and full paper'), true, 'NAIA prompt preserves question and paper');
+  expect(inlinePrompt.includes('directly in this chat as Markdown text'), true, 'NAIA must answer in chat');
+  expect(inlinePrompt.includes('Do not create a document'), true, 'NAIA must not generate downloads');
+  const naiaMarkdown = globalThis.__browseredEmacsKeys.naiaMarkdown;
+  expect(naiaMarkdown('Original answer', '23').name, 'NAIA-Q23.md',
+    'NAIA reply offers a Markdown filename');
+  expect(naiaMarkdown('Original answer', '23').content.includes('Original answer'), true,
+    'NAIA Markdown preserves the original response');
+  expect(naiaMarkdown('Original answer').format, 'md', 'NAIA button exports Markdown');
+  const naiaSubmission = globalThis.__browseredEmacsKeys.naiaSubmission;
+  const paperFixture = '**Q23.** Study design?\n\n---\nPaper supplied for consultation: paper.md\n# Full paper\nMethods and results.';
+  const sentPaper = naiaSubmission('Submeter a pergunta com o paper ao NAIA', paperFixture);
+  expect(sentPaper.id, '23', 'NAIA finds the single question in the buffer');
+  expect(sentPaper.prompt, paperFixture, 'NAIA includes the complete article without upload');
+  expect(sentPaper.withPaper, true, 'NAIA text submission identifies paper context');
+  expect(naiaSubmission('Summarize this document', paperFixture), null,
+    'Ordinary requests do not route to NAIA');
+
+  const artifactMetadata = globalThis.__browseredEmacsKeys.artifactMetadata;
+  expect(artifactMetadata({name: 'answer.docx', format: 'md'}).name,
+    'answer.md', 'Markdown never carries a DOCX extension');
+  expect(artifactMetadata({name: 'answer.docx', format: 'txt'}).type,
+    'text/plain;charset=utf-8', 'Text uses its actual MIME type');
+  expect(artifactMetadata({name: 'answer.pdf', format: 'pdf'}).name,
+    'answer.pdf', 'Real PDF retains its extension');
   const sample = "First line\nHi\nAnother line";
   expect(movement.lineStart(sample, 0), 0, "Beginning of first line");
   expect(movement.lineStart("\nabc", 0), 0, "Empty first line");

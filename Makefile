@@ -24,3 +24,14 @@ check: rasp
 clean:
 	$(MAKE) -C rasp clean
 	$(MAKE) -C browsered clean
+
+# Optional small editor: C owns the command loop and embeds femtoscheme.
+.PHONY: schememax check-schememax check-schememax-ui
+schememax:
+	$(MAKE) -C schememax
+
+check-schememax:
+	$(MAKE) -C schememax check
+
+check-schememax-ui:
+	$(MAKE) -C schememax check-ui
