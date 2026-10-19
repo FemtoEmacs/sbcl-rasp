@@ -8,6 +8,10 @@
 ;;;; Schememax.  Without a display (an ssh session, say), or without
 ;;;; irene-dixe, a rough character sketch opens in the *plot* buffer.
 ;;;;
+;;;; A printed table, (data-table ...) (section 2 of the guidelines, schema
+;;;; schememax/data-table/1), opens the same way: irene-dixe shows it as a
+;;;; table, with its header, indented subcategories and notes.
+;;;;
 ;;;; The table is DATA.  It is read, never evaluated, and text with a #
 ;;;; outside strings is refused, because the reader's #. would evaluate.
 ;;;; (image ...) forms, the sketches of diagnostic images, will use the same
@@ -15,7 +19,7 @@
 
 (define *sketch-viewer-name* "irene-dixe")
 (define *plot-buffer* "*plot*")
-(define *sketch-forms* '("(estimator-plot" "(image"))
+(define *sketch-forms* '("(estimator-plot" "(data-table" "(image"))
 
 ;;; ------------------------------------------------------------------
 ;;; Property lists and numbers
@@ -371,6 +375,158 @@ link (dotted, between sampled landmarks); points are the landmarks (x y)."
     (reverse out)))
 
 ;;; ------------------------------------------------------------------
+;;; Data tables: from (data-table ...) to drawing records
+;;; ------------------------------------------------------------------
+;;; A (data-table ...) (ttfy/plots-guidelines.md, section 2) is shown as a
+;;; table in irene-dixe's window.  The cells are taken from the TOKENS of
+;;; the table (ttfy-tokens, ttfy.scm), not from the numbers READ from it,
+;;; so they keep their printed text: 33.0 stays 33.0, 82.3 never becomes
+;;; 82.2999999999999972.  Fields in a record are separated by tabs.
+
+(define (tget node key (default #f))
+  "The value after the keyword KEY (a string such as \":rows\") in the
+token list NODE, or DEFAULT."
+  (let loop ((l (if (pair? node) node '())))
+    (cond ((or (null? l) (null? (cdr l))) default)
+          ((equal? (car l) key) (cadr l))
+          (else (loop (cdr l))))))
+
+(define (token-string tok)
+  "The text of a string token \"...\", without its quotes and escapes."
+  (let ((n (length tok)))
+    (let loop ((i 1) (acc '()))
+      (cond ((>= i (- n 1)) (apply string-append (reverse acc)))
+            ((= (aref tok i) 92) (loop (+ i 2) (cons (string.sub tok (+ i 1) (min (+ i 2) n)) acc)))
+            (else (loop (+ i 1) (cons (string.sub tok i (+ i 1)) acc)))))))
+
+(define (token-number? tok)
+  (and (> (length tok) 0) (string->number tok) #t))
+
+(define (group-thousands tok)
+  "18053 -> 18,053 (five digits or more, as journals print them); 3895 and
+76.4 are left as they are."
+  (let* ((neg (string-prefix? "-" tok))
+         (s (if neg (string.sub tok 1 (length tok)) tok))
+         (dot (string-search "." s))
+         (whole (if dot (string.sub s 0 dot) s))
+         (rest (if dot (string.sub s dot (length s)) "")))
+    (if (< (length whole) 5) tok
+        (let loop ((w whole) (acc '()))
+          (if (<= (length w) 3)
+              (concat (if neg "-" "") (string-join (cons w acc) ",") rest)
+              (loop (string.sub w 0 (- (length w) 3))
+                    (cons (string.sub w (- (length w) 3) (length w)) acc)))))))
+
+(define (cell-text node)
+  "A data-table cell as it would be printed: (:count 2839 :percent 76.4)
+-> \"2839 (76.4)\", (:value 133 :ci (122 154)) -> \"133 (122–154)\",
+(:< 0.001) -> \"<0.001\", :na -> \"NA\", nil -> \"\"."
+  (cond ((null? node) "")
+        ((string? node)
+         (cond ((string=? node "nil") "")
+               ((string-prefix? "\"" node) (token-string node))
+               ((token-number? node) (group-thousands node))
+               ((string-prefix? ":" node) (string-upcase (string.sub node 1 (length node))))
+               (else node)))
+        ((and (string? (car node)) (assoc (car node) '((":<" . "<") (":>" . ">") (":<=" . "≤") (":>=" . "≥"))))
+         => (lambda (op) (concat (cdr op) (string-join (map cell-text (cdr node)) " "))))
+        ((tget node ":count")
+         (concat (cell-text (tget node ":count"))
+                 (if (tget node ":percent") (concat " (" (cell-text (tget node ":percent")) ")") "")))
+        ((tget node ":value")
+         (let ((ci (tget node ":ci")))
+           (concat (cell-text (tget node ":value"))
+                   (if (and (pair? ci) (pair? (cdr ci)))
+                       (concat " (" (cell-text (car ci)) "–" (cell-text (cadr ci)) ")")
+                       ""))))
+        (else (string-join (map cell-text node) " "))))
+
+(define (table-field s)
+  "S on one line and without tabs, for a tab-separated record."
+  (string-join (string-split (sketch-line s) "\t") " "))
+
+(define (table-drawing text)
+  "The lines of the drawing file for the (data-table ...) written in TEXT."
+  (let* ((tree (ttfy-tree (ttfy-tokens text)))
+         (plist (cdr tree))
+         (columns (filter pair? (let ((c (tget plist ":columns" '()))) (if (pair? c) c '()))))
+         (n (length columns))
+         (prov (tget plist ":provenance"))
+         (out '()))
+    (define (emit . parts) (set! out (cons (apply concat parts) out)))
+    (define (emit-rows rows depth)
+      (for-each
+       (lambda (row)
+         (when (pair? row)
+           (let* ((cells (let ((c (tget row ":cells" '()))) (if (pair? c) c '())))
+                  (sub (let ((r (tget row ":rows" '()))) (if (pair? r) (filter pair? r) '())))
+                  (texts (map (lambda (i) (if (< i (length cells)) (cell-text (list-ref cells i)) ""))
+                              (iota n))))
+             (emit "row " depth " " (if (pair? sub) 1 0) "\t"
+                   (string-join (map table-field (cons (cell-text (tget row ":label" "")) texts)) "\t"))
+             (emit-rows sub (+ depth 1)))))
+       rows))
+    (when (= n 0) (error "data table: no :columns"))
+    (emit "table 1")
+    (emit "title " (sketch-line (concat "Table " (cell-text (tget plist ":table" "\"?\"")) ". "
+                                        (cell-text (tget plist ":caption" "")))))
+    (emit "subtitle " (sketch-line
+                       (if (pair? prov)
+                           (concat "[" (cell-text (tget prov ":source" "")) ", PDF page "
+                                   (cell-text (tget prov ":pdf-page" "?")) "]")
+                           "")))
+    (emit "header\t" (string-join (map table-field
+                                       (cons (cell-text (tget plist ":stub" ""))
+                                             (map (lambda (c) (cell-text (tget c ":label" ""))) columns)))
+                                  "\t"))
+    (emit-rows (let ((r (tget plist ":rows" '()))) (if (pair? r) r '())) 0)
+    (let ((notes (tget plist ":notes" '())))
+      (for-each (lambda (s) (emit "remark " (sketch-line (cell-text s))))
+                (if (pair? notes) notes '())))
+    (let ((a (cell-text (tget plist ":abbreviations" ""))))
+      (when (> (length a) 0) (emit "remark " (sketch-line a))))
+    (reverse out)))
+
+(define (text-table lines)
+  "The table records LINES as plain text, columns aligned: for a terminal
+without a display, or without irene-dixe."
+  (let* ((recs (filter (lambda (l) (or (string-prefix? "header\t" l) (string-prefix? "row " l))) lines))
+         (rows (map (lambda (l)
+                      (let* ((fields (string-split l "\t"))
+                             (head (string-split (car fields) " "))
+                             (depth (if (string=? (car head) "row") (string->number (cadr head)) 0)))
+                        (cons (concat (make-spaces (* 2 depth)) (cadr fields)) (cddr fields))))
+                    recs))
+         (ncol (apply max (map length rows)))
+         (width (lambda (i) (apply max (map (lambda (r) (if (< i (length r)) (utf8-width (list-ref r i)) 0)) rows))))
+         (widths (map width (iota ncol)))
+         (fmt (lambda (r)
+                (string-join (map (lambda (i)
+                                    (let ((s (if (< i (length r)) (list-ref r i) "")))
+                                      (if (= i 0)
+                                          (concat s (make-spaces (- (list-ref widths i) (utf8-width s))))
+                                          (concat (make-spaces (- (list-ref widths i) (utf8-width s))) s))))
+                                  (iota ncol))
+                             "  ")))
+         (find-rec (lambda (tag) (find (lambda (l) (string-prefix? (concat tag " ") l)) lines)))
+         (rule (make-string (+ (apply + widths) (* 2 (- ncol 1))) #\-)))
+    (string-join (append (list (string.sub (find-rec "title") 6 (length (find-rec "title")))
+                               (string.sub (find-rec "subtitle") 9 (length (find-rec "subtitle"))) ""
+                               (fmt (car rows)) rule)
+                         (map fmt (cdr rows))
+                         (list rule)
+                         (map (lambda (l) (string.sub l 7 (length l)))
+                              (filter (lambda (l) (string-prefix? "remark " l)) lines))
+                         (list "" "Install irene-dixe (make) and use a display to see this table in a window."))
+                 "\n")))
+
+(define (utf8-width s)
+  "The number of characters in S (UTF-8 continuation bytes are not counted)."
+  (let loop ((i 0) (n 0))
+    (if (>= i (length s)) n
+        (loop (+ i 1) (if (= (logand (aref s i) 192) 128) n (+ n 1))))))
+
+;;; ------------------------------------------------------------------
 ;;; The drawing records, parsed back (for the character sketch and tests)
 ;;; ------------------------------------------------------------------
 
@@ -495,8 +651,10 @@ paper-plot-1.png, then -plot-2 ...), or in the home folder."
       (let ((path (concat dir "/" base "-plot-" n ".png")))
         (if (file-attributes path) (loop (+ n 1)) path)))))
 
+(define (table-lines? lines) (and (pair? lines) (string=? (car lines) "table 1")))
+
 (define (show-text-plot lines why)
-  (let ((text (text-plot lines)))
+  (let ((text (if (table-lines? lines) (text-table lines) (text-plot lines))))
     (delete-other-windows)
     (split-window)
     (other-window)
@@ -519,7 +677,9 @@ paper-plot-1.png, then -plot-2 ...), or in the home folder."
              (let* ((save (picture-path))
                     (result (spawn-program viewer (list path save))))
                (if (eq? result #t)
-                   (message "Plot window opened. In it, s saves the picture as " save)
+                   (message (if (table-lines? lines) "Table window opened. In it, s saves the picture as "
+                                "Plot window opened. In it, s saves the picture as ")
+                            save)
                    (show-text-plot lines (concat "irene-dixe did not start (" (->string result) "): a character sketch instead")))))))))
 
 (define (plot-lines-at-point)
@@ -527,16 +687,18 @@ paper-plot-1.png, then -plot-2 ...), or in the home folder."
   (let* ((text (buffer-string))
          (span (form-at text (point))))
     (if (not span)
-        (begin (message "No plot table here: put the cursor inside an (estimator-plot ...) table") #f)
+        (begin (message "No table here: put the cursor inside an (estimator-plot ...) or (data-table ...)") #f)
         (guard (e (#t (message (describe-error e)) #f))
-          (let* ((form (read-sketch-form (string.sub text (car span) (cdr span))))
+          (let* ((source (string.sub text (car span) (cdr span)))
+                 (form (read-sketch-form source))
                  (head (and (pair? form) (car form))))
             (cond ((eq? head 'estimator-plot) (km-drawing form))
+                  ((eq? head 'data-table) (table-drawing source))
                   ((eq? head 'image) (message "Sketches of diagnostic images (image ...) are not drawn yet") #f)
                   (else (message "Not a plot table: " (->string head)) #f)))))))
 
 (defcommand (plot-at-point)
-  "C-c p: draw the plot table (estimator-plot ...) at or after the cursor."
+  "C-c p: draw the plot table (estimator-plot ...), or show the (data-table ...), at the cursor."
   (let ((lines (plot-lines-at-point)))
     (when lines (draw-sketch lines))))
 

@@ -5,7 +5,8 @@
 ;;;;   C-c g       a menu: h hints, q question, d discussion
 ;;;;   C-c g       in a question or discussion window, sends the request
 ;;;;   C-c y       in a question answer, insert every fenced code block
-;;;;               into the source and close the help window
+;;;;               into the source and close the help window, or create
+;;;;               the new buffer the answer proposes
 ;;;;   C-c t       in a discussion, insert the snippet under the cursor
 ;;;;
 ;;;; Codex receives a bounded copy of the source around point.  It runs with
@@ -15,7 +16,7 @@
 (defvar *codex-program* #f)     ; an executable path, or #f to find it
 (defvar *codex-model* #f)       ; #f: the CLI's default
 (defvar *codex-timeout* 300)    ; seconds
-(defvar *codex-context-bytes* 60000)
+(defvar *codex-context-bytes* 400000)
 
 (define *codex-request-buffer* "*codex-request*")
 (define *codex-answer-buffer* "*codex*")
@@ -27,7 +28,8 @@
 (defvar *codex-discussion-origin* #f)
 
 (define *codex-instructions*
-  "You are the Codex assistant inside Schememax.  The user is editing a
+  (string-append
+   "You are the Codex assistant inside Schememax.  The user is editing a
 file and has written a request in a separate editor window.  Answer that
 request using the supplied source context.
 
@@ -37,7 +39,10 @@ and run non-destructive tests when useful.  For a translation or
 explanation, return the requested prose directly.  When you propose text or
 code for insertion, place exactly the insertable text in one fenced code
 block.  Keep explanations short and use plain text suitable for an editor
-window.")
+window.
+
+"
+   *new-buffer-instructions*))
 
 (define (codex-source-directory)
   "Absolute directory of the current file, or the editor's directory."
@@ -60,7 +65,8 @@ window.")
   (split-window)
   (other-window)
   (select-buffer *codex-request-buffer*)
-  (set-buffer-menu *codex-request-buffer* '(("SEND" "C-c g") ("CLOSE" close-assistant-windows)))
+  (set-buffer-menu *codex-request-buffer*
+                   '(("SEND" "C-c g") ("TANGLE" "C-c y") ("CLOSE" close-assistant-windows)))
   (erase-buffer)
   (fe-set-modified 0)
   (message "Describe the task, then press C-c g again to send it to Codex")
@@ -178,6 +184,8 @@ window.")
   (split-window)
   (other-window)
   (select-buffer *codex-discussion-buffer*)
+  (set-buffer-menu *codex-discussion-buffer*
+                   '(("SEND" "C-c g") ("TANGLE" "C-c t") ("CLOSE" close-discussion-window)))
   (when (= 0 (buffer-size))
     (insert (discussion-header "Codex" origin *codex-you-marker* "C-c g")))
   (end-of-buffer)

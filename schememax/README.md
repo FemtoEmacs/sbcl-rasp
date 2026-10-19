@@ -82,6 +82,12 @@ C-h (or F1) shows every key on one page. The highlights:
 - **Scheme:** C-x C-e, C-M-x and M-: evaluate; C-x C-r reloads the scripts.
 - **Shell:** M-! opens a window for a command (Enter: more lines); C-c s
   runs it and shows the output below the command.
+- **Prompts (the minibuffer):** the answer to every prompt (C-x C-w,
+  C-x C-f, M-x, M-:, query-replace ...) can be edited anywhere: left and
+  right (C-b, C-f), C-left and C-right (M-b, M-f) by words, Home and End
+  (C-a, C-e), Backspace and Delete (C-d), C-k to the end, C-u the whole
+  answer; typed text goes in at the cursor. TAB completes file and command
+  names; C-g cancels.
 
 ## Menus
 
@@ -102,9 +108,25 @@ C-c r asks Claude and C-c g asks Codex (ChatGPT). Each offers **h** hints
 about the code at the cursor, **q** a question written in a window of its
 own (the same key sends it), or **d** a discussion that stays open. C-c y
 inserts the code of an answer, after asking; in a discussion, C-c t inserts
-the snippet under the cursor. The assistants only read: Claude runs with
+the snippet under the cursor. Their windows have buttons instead of [?]:
+[SEND][TANGLE][CLOSE] in a question or a discussion, [TANGLE][CLOSE] under
+an answer; [TANGLE] is C-y's insert (C-c t in a discussion). Besides the
+file with the cursor, the assistants are sent every other buffer open in
+the editor, by name, so "the answers buffer" means something to them; the
+editor's own windows (help, menus, the assistants') are not sent. The
+assistants only read: Claude runs with
 every tool disabled, Codex in its read-only sandbox, and nothing enters
 your file without confirmation (C-/ takes it back).
+
+Neither assistant can open a buffer, but either can propose one: "make
+five questions on this paper, put them in a new buffer and paste the paper
+below them" gets an answer with a block that opens with
+` ```new-buffer NAME `, in which a line `<<FILE>>` stands for the whole
+file. C-c y (or C-c t on the block, in a discussion) asks, then makes the
+buffer, with your file pasted where `<<FILE>>` was; the assistant never
+retypes the paper. C-x C-w saves the new buffer to a file. The assistants
+are sent the whole file when it is under 400 KB, so a paper is seen to
+its end.
 
 Claude is reached through Claude Code (`claude -p`, your usual login) or,
 without it, the Messages API with ANTHROPIC_API_KEY or
@@ -146,6 +168,14 @@ window, and the editor checks that the file is there before saying
 "Saved". Without a display, or without irene-dixe, a character sketch
 opens in `*plot*`.
 
+A printed table, `(data-table ...)`, opens the same way: C-c p shows it in
+irene-dixe's window as a table, with its caption, a ruled header, indented
+subcategories, bold group rows, banded lines and the notes under it. The
+cells are shown as printed: `(:count 2839 :percent 76.4)` is "2839 (76.4)",
+`(:value 133 :ci (122 154))` is "133 (122–154)", `(:< 0.001)` is "<0.001".
+Arrows, the wheel and PgUp/PgDn scroll a large table; s saves the whole
+table as a PNG. Without a display it opens in `*plot*` as aligned text.
+
 The table is read as data and never evaluated; a table with `#` outside
 strings is refused, because the reader's `#.` would run code. Levels that
 do not join (a drop starting away from the current level) are listed under
@@ -160,8 +190,11 @@ them.
 
 M-x read-only (or C-x C-q) makes the buffer read-only and turns the keys
 into nvim's normal-mode motions: h j k l (and the arrows), w b e, 0 ^ $,
-gg G, Enter, C-d C-u, / ? n N, % (the matching paren); yy and y{motion} copy, v selects (then y
-copies). Nothing can change the buffer, neither a key nor a script.
+gg G (G: the end of the text; 42G: line 42), Enter, C-d C-u, / ? n N,
+% (the matching paren); yy and y{motion} copy, v selects (then y copies).
+What is copied also goes to the system clipboard, so Cmd-V (Ctrl-V)
+pastes it in other programs. Nothing can change the buffer, neither a key
+nor a script.
 
 M-x vim-mode adds the keys that edit: dd and d{motion} (dw, d$, dgg), x,
 p and P, u and C-r, v ... d, o and O; . repeats the last change, J joins

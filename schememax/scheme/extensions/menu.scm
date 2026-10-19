@@ -122,7 +122,8 @@ separated by RS."
 (define *mode-line-name-maximum* 18)
 
 (define (ai-menu-buffer-p name)
-  (or (member name '("*assistant*" "*ai-options*"))
+  "The assistants' windows: their own buttons, and no [?] (no help from help)."
+  (or (member name '("*assistant*" "*ai-options*" "*discussion*"))
       (string-search "*codex" name) (string-search "*claude" name)))
 
 (define (button-width b) (+ 2 (string-length (car b))))

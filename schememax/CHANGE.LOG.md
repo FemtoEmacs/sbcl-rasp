@@ -1,5 +1,96 @@
 #Femto Emacs Change Log
 
+## 2026-10-19 — An editable minibuffer; assistant buttons; all buffers sent
+
+* src/lineedit.c (new): the answer to every prompt is edited anywhere in
+  it: left/right and C-b/C-f, C-left/C-right and M-b/M-f by words,
+  Home/End and C-a/C-e, Backspace, Delete and C-d, C-k, C-u; typed text
+  goes in at the cursor, UTF-8 by characters, and a long answer scrolls.
+  Mouse reports and unknown keys are read whole and ignored (before, an
+  arrow typed "[D" into the answer).  getinput (key.c), getfilename
+  (complete.c, TAB completion kept) and M-x (funcmap.c, TAB and the list
+  of commands kept) all use it.
+* display.c, segstart: with word wrap, the end of a file without a final
+  newline counted as the start of a new empty row, so up at the end of the
+  file moved to the row the cursor was already on and seemed stuck.  The
+  cursor at the end now belongs to the last row, where it is drawn.  A
+  file that ends with a newline is unchanged.
+* The assistants' windows have their own buttons and no [?]:
+  [SEND][TANGLE][CLOSE] in *discussion* and *codex-chat* (TANGLE = C-c t,
+  CLOSE = M-x close-discussion-window), [SEND][TANGLE][CLOSE] in
+  *claude-request* and *codex-request*, [TANGLE][CLOSE] under an answer
+  (TANGLE = C-c y).
+* Claude and Codex are sent, after the file with the cursor, every other
+  buffer open in the editor, by name and file, within the same 400 KB; the
+  editor's own windows (help, menus, assistants) are not sent.
+* Read-only and vim mode: y and v...y copy to the system clipboard too
+  (pbcopy on macOS); G goes to the end of the text (42G to line 42).
+* tests/run-tests.scm: two new checks; 222/222 pass in a headless build,
+  and the minibuffer, up at the end of a wrapped file, G, v...y, the
+  buttons and the buffers sent were tried in the terminal build.
+
+## 2026-10-19 — Claude and Codex can propose a new buffer
+
+* Asked to put five questions in a new buffer with the paper below them,
+  Claude answered that it could not open buffers, and that it saw the paper
+  only up to Table 2.  Both are fixed, for Claude (C-c r) and Codex (C-c g).
+* The assistants are sent the whole file up to 400 KB (was 60 KB around the
+  cursor), so a textified paper is seen to its end.
+* Both are told (*new-buffer-instructions*) that they may propose a buffer:
+  a fenced block opening with ```new-buffer NAME, in which a line <<FILE>>
+  stands for the whole file.  C-c y, or C-c t on the block in a
+  discussion, asks, then creates the buffer (NAME, or NAME<2> if taken; at
+  most 16 characters) with the file pasted in place of <<FILE>>.  Second
+  Law: nothing is made without your y.  A proposed buffer is never inserted
+  as code.
+* tests/run-tests.scm: six new checks; README and the help page updated.
+
+## 2026-10-19 — C-c p shows data tables in a window
+
+* sketch.scm: with the cursor in a `(data-table ...)`, C-c p sends irene-dixe
+  a table: caption, header, rows (depth, group) and notes.  The cells are
+  printed text, taken from the table's tokens, so 33.0 stays 33.0:
+  (:count N :percent P) -> "N (P)", (:value X :ci (L H)) -> "X (L–H)",
+  (:< 0.001) -> "<0.001", :na -> "NA", nil -> empty; counts of five digits
+  or more get thousands commas (18,053).  Without a display, aligned text in
+  *plot*.
+* irene-dixe.c: a table mode.  Ruled header, bold group rows, indented
+  subcategories, banded lines, notes below; the window is sized to the table
+  (up to 1400 x 900), arrows, wheel, PgUp/PgDn, Home and End scroll it, and
+  s (or --render) saves the whole table, not just the visible part.
+* tests/run-tests.scm: three new checks; README and the help page updated.
+
+## 2026-10-19 — TTFY tables are S-expressions, the same from ChatGPT and Claude
+
+* ttfy/plots-guidelines.md (version 1.1), section 2: every table is one
+  S-expression in a `lisp` block; no Markdown pipe tables, aligned columns or
+  `text` record blocks.  Printed tables use a closed schema,
+  `(data-table :schema schememax/data-table/1 ...)`: fixed fields in a fixed
+  order, columns c1, c2 ..., one cell per column, and a short list of cell
+  forms ((:count N :percent P), (:value X :ci (L H)), (:< 0.001), :na, nil).
+* src/assistant.c: the C-c f prompt, the same for both providers, says so.
+* ttfy.scm: the answer is checked.  A pipe table that slipped through is
+  sent back, alone, to the same provider to be rewritten as a data-table;
+  a lisp block that does not read is reported at the top of the answer.
+  Then every lisp block is laid out by Schememax's own fixed rules (atoms
+  keep their printed text), so ChatGPT and Claude give the same layout.
+* tests/run-tests.scm: seven new TTFY checks.
+
+## 2026-10-19 — Keywords are constants, as in Common Lisp
+
+* femtoscheme already read :time, :title, :estimator as Common Lisp does:
+  self-evaluating, eq? to their quoted forms, so plot tables such as
+  Figure 1A in NAIA-tst/hardy-2025-wo.md need no quoting.
+* What differed: (define :time 3) and (set! :time 3) were silently ignored,
+  and (let ((:x 1)) :x) or (lambda (:y) :y) bound a keyword as a variable.
+  Common Lisp signals an error for all of these; now femtoscheme does too
+  ("compile error: cannot assign to keyword :time", "keyword :x cannot be
+  a variable").  Fix in femtoscheme/compiler.scm; femtoscheme.boot rebuilt
+  with bootstrap.sh; all femtoscheme tests pass.
+* Still different from Common Lisp, by design: keywords are case-sensitive
+  (:Time is not :time), (symbol->string :time) is ":time", and a trailing
+  colon (time:) also makes a keyword, used for keyword arguments.
+
 ## 2026-10-18 — Read-only and vim mode, with nvim's normal-mode keys
 
 * M-x read-only (also M-x read-mode, M-x read-only-mode, C-x C-q): the

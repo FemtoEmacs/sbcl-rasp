@@ -6,7 +6,8 @@
 ;;;;           write a question (C-c r again sends it), d for a discussion;
 ;;;;           the answer appears in a window below
 ;;;;   C-c y   insert the code the assistant proposed, at the cursor, after
-;;;;           you confirm (undo with C-/)
+;;;;           you confirm (undo with C-/); or create the buffer it proposed
+;;;;           (```new-buffer NAME, with <<FILE>> for the whole file)
 ;;;;   C-c t   in a discussion, insert the snippet under the cursor
 ;;;;   C-c g   Codex (ChatGPT), see codex.scm
 ;;;;
@@ -36,17 +37,29 @@
 (defvar *claude-model* #f)            ; e.g. "sonnet" or "opus"; #f: your default
 (defvar *claude-api-model* "claude-sonnet-5-5")
 (defvar *assistant-timeout* 180)      ; seconds
-(defvar *assistant-context-bytes* 60000)
+(defvar *assistant-context-bytes* 400000) ; a whole paper fits
 (define *assistant-buffer* "*assistant*")
 (define *claude-request-buffer* "*claude-request*")
 (define *claude-discussion-buffer* "*discussion*")
 (defvar *discussion-origin* #f)
 
+(define *new-buffer-instructions*
+  "You cannot open buffers or files, but you can propose a new buffer for
+the user to create with one key.  Write its whole text in ONE fenced block
+whose opening line is ```new-buffer NAME (NAME: at most 16 characters, no
+spaces).  Inside that block, a line that is exactly <<FILE>> stands for
+the whole text of the user's file: Schememax pastes the file there.  Use
+it whenever the new buffer should contain the file or the paper; never
+retype the file and never ask the user to copy it.  Put nothing else in
+that block that the user did not ask for.")
+
 (define *assistant-instructions*
-  "You are the assistant built into Schememax, a small Emacs-like text editor.
+  (string-append
+   "You are the assistant built into Schememax, a small Emacs-like text editor.
 The user pressed a key to ask for help while editing.  You receive the
-file name, the language, and the text around the cursor; the cursor is
-marked <<CURSOR>>.  Answer the user's question, or, when there is no
+file name, the language, and its text, with the cursor marked <<CURSOR>>;
+then the other buffers open in the editor, each under its name, so a
+question about \"the answers buffer\" or \"the paper\" can be answered.  Answer the user's question, or, when there is no
 question, give short, concrete hints about the code at the cursor: bugs,
 simplifications, what to write next.
 
@@ -55,7 +68,10 @@ wide, so keep it brief and do not use Markdown headings or tables.  Put
 code to insert at the cursor in fenced blocks (``` ... ```): the user can
 insert them with a key, so fence only code meant to be inserted, and show
 code you are not proposing (the old version, say) indented, without
-fences.  Never rewrite the whole file.")
+fences.  Never rewrite the whole file.
+
+"
+   *new-buffer-instructions*))
 
 ;;; ------------------------------------------------------------------
 ;;; Assistants
@@ -305,19 +321,59 @@ true/false/null #t/#f/'null."
 ;;; ------------------------------------------------------------------
 
 (define (buffer-context)
-  "A description of the current buffer, with the cursor marked <<CURSOR>>."
+  "A description of the current buffer, with the cursor marked <<CURSOR>>,
+then of the other buffers open in the editor."
+  (let* ((this (this-buffer-context *assistant-context-bytes*))
+         (others (other-buffers-context (- *assistant-context-bytes* (length this)))))
+    (string-append this others)))
+
+;; buffers of the editor's own windows: never sent
+(define *private-buffer-names*
+  '("*assistant*" "*claude-request*" "*discussion*" "*codex*" "*codex-request*" "*codex-chat*"
+    "*schememax-help*" "*help-options*" "*ai-options*" "*more-actions*" "*ttfy-menu*" "*ttfy-errors*"
+    "*completions*" "*buffers*" "*buffer-pick*" "*plot*"))
+
+(define (other-buffers-context budget)
+  "The other buffers, each under its name and file, while BUDGET bytes last;
+a buffer that does not fit is cut, and the cut is said."
+  (let* ((here (get-buffer-name))
+         (names (filter (lambda (n) (not (or (string=? n here) (member n *private-buffer-names*))))
+                        (buffer-names))))
+    (if (null? names) ""
+        (let loop ((names names) (left budget) (parts '()))
+          (if (or (null? names) (<= left 200))
+              (string-append
+               "\n\nOther buffers open in the editor (the cursor is not in them):"
+               (apply string-append (reverse parts))
+               (if (pair? names)
+                   (concat "\n\n(Not sent, for lack of room: " (string-join names ", ") ")")
+                   ""))
+              (let* ((name (car names))
+                     (info (call-in-window-of name
+                                              (lambda () (cons (buffer-filename)
+                                                               (buffer-substring 0 (min (buffer-size) left))))))
+                     (cut (>= (length (cdr info)) left))
+                     (part (string-append "\n\nBuffer: " name
+                                          (if (car info) (concat " (file " (car info) ")") "")
+                                          (if cut ", only its beginning" "")
+                                          "\n```\n" (cdr info) "\n```")))
+                (loop (cdr names) (- left (length part)) (cons part parts))))))))
+
+(define (this-buffer-context limit)
+  "The current buffer, with the cursor marked <<CURSOR>>: all of it when it
+is under LIMIT bytes, otherwise the part around the cursor."
   (let* ((p (point))
          (size (buffer-size))
-         (half (quotient *assistant-context-bytes* 2))
-         (start (if (<= size *assistant-context-bytes*) 0 (line-start (max 0 (- p half)))))
-         (end (if (<= size *assistant-context-bytes*) size (line-end (min size (+ p half)))))
+         (half (quotient limit 2))
+         (start (if (<= size limit) 0 (line-start (max 0 (- p half)))))
+         (end (if (<= size limit) size (line-end (min size (+ p half)))))
          (before (buffer-substring start p))
          (after (buffer-substring p end))
          (line (line-number p))
          (file (or (buffer-filename) (get-buffer-name)))
          (lang (language-for-file file))
          (m (mark))
-         (region (and m (not (= m p)) (< (abs (- m p)) *assistant-context-bytes*)
+         (region (and m (not (= m p)) (< (abs (- m p)) limit)
                       (buffer-substring (min m p) (max m p)))))
     (string-append "File: " file "\nLanguage: " (if lang (language-name lang) "unknown")
                    "\nCursor: line " (number->string line)
@@ -350,6 +406,10 @@ where it was.  An open discussion window stays open."
           (split-window)
           (other-window)
           (select-buffer *assistant-buffer*)
+          ;; [TANGLE] inserts the answer's code (or makes the buffer it
+          ;; proposes) in the file asked about, as C-c y does
+          (set-buffer-menu *assistant-buffer*
+                           '(("TANGLE" "C-c y") ("CLOSE" close-assistant-windows)))
           (fill)
           ;; back to the window above
           (do ((k 0 (+ k 1))) ((>= k (- (window-count) 1))) (other-window))
@@ -363,7 +423,9 @@ where it was.  An open discussion window stays open."
              (substitute-byte q 10 32)))))
 
 (define (answer-hint answer)
-  (if (proposed-code answer) "C-c y insert code & close" "C-x 1 close"))
+  (cond ((pair? (proposed-buffers answer)) "C-c y create buffer & close")
+        ((proposed-code answer) "C-c y insert code & close")
+        (else "C-x 1 close")))
 
 (define (run-assistant key question context origin)
   "Send QUESTION (\"\" for hints) and CONTEXT to the assistant KEY and show
@@ -390,8 +452,10 @@ the answer below the buffer ORIGIN."
          answer)
         (set-buffer-hint *assistant-buffer* (answer-hint answer))
         (message name " answered.  "
-                 (if (proposed-code answer) "C-c y inserts the code and closes the window"
-                     "C-x 1 closes the window"))))))
+                 (cond ((pair? (proposed-buffers answer))
+                        "C-c y creates the buffer it proposes and closes the window")
+                       ((proposed-code answer) "C-c y inserts the code and closes the window")
+                       (else "C-x 1 closes the window")))))))
 
 ;;; ------------------------------------------------------------------
 ;;; C-c r: the menu
@@ -408,7 +472,8 @@ the answer below the buffer ORIGIN."
   (split-window)
   (other-window)
   (select-buffer *claude-request-buffer*)
-  (set-buffer-menu *claude-request-buffer* '(("SEND" "C-c r") ("CLOSE" close-assistant-windows)))
+  (set-buffer-menu *claude-request-buffer*
+                   '(("SEND" "C-c r") ("TANGLE" "C-c y") ("CLOSE" close-assistant-windows)))
   (erase-buffer)
   (fe-set-modified 0)
   (message "Write your question for Claude, then C-c r sends it (C-x o: back to " origin ")")
@@ -514,7 +579,10 @@ one; BODY is the code without the fences."
                   (loop (cdr lines) (+ end 1) (cons pos end) blocks))
               (loop (cdr lines) (+ end 1) open blocks))))))
 
-(define (proposed-snippets answer) (map caddr (fenced-blocks answer)))
+(define (proposed-snippets answer)
+  "The code blocks to insert: every fenced block but a proposed buffer."
+  (let ((text (or answer "")))
+    (map caddr (filter (lambda (b) (not (new-buffer-block? text b))) (fenced-blocks text)))))
 
 (define (proposed-code answer)
   (let ((s (proposed-snippets answer))) (and (pair? s) (car s))))
@@ -536,7 +604,9 @@ one; BODY is the code without the fences."
   "C-c y: insert every snippet the last answer proposed at the cursor,
 after asking, and close the answer window."
   (let ((snippets (proposed-snippets *assistant-last-answer*)))
-    (cond ((null? snippets) (message "The last answer has no code to insert"))
+    (cond ((pair? (proposed-buffers *assistant-last-answer*))
+           (create-proposed-buffers *assistant-last-answer* (file-behind-assistant)))
+          ((null? snippets) (message "The last answer has no code to insert"))
           ((member (get-buffer-name) (list *claude-discussion-buffer* *codex-discussion-buffer*))
            (message "In the discussion, C-c t inserts the snippet under the cursor"))
           (else
@@ -560,6 +630,90 @@ after asking, and close the answer window."
                (goto-char here)))))))
 
 ;;; ------------------------------------------------------------------
+;;; Second Law: a new buffer, when told to
+;;; ------------------------------------------------------------------
+;;; Neither assistant can open a buffer, and neither should retype a long
+;;; file.  So an answer may PROPOSE a buffer: a fenced block whose opening
+;;; line is ```new-buffer NAME.  A line that is exactly <<FILE>> stands for
+;;; the whole text of the file the question was asked about.  C-c y (or
+;;; C-c t on the block, in a discussion) asks, then makes the buffer.
+
+(define *file-placeholder* "<<FILE>>")
+
+(define (fence-info text block)
+  "The words after ``` on the opening line of BLOCK, from FENCED-BLOCKS."
+  (let* ((start (car block))
+         (nl (or (string.find text "\n" start) (length text)))
+         (line (trim (byte-substring text start nl))))
+    (trim (byte-substring line (min 3 (length line))))))
+
+(define (new-buffer-block? text block)
+  (string-prefix? "new-buffer" (fence-info text block)))
+
+(define (new-buffer-name info)
+  "The buffer name in the fence words \"new-buffer NAME\": its first word,
+cut to the 16 characters a buffer name can hold."
+  (let* ((words (filter (lambda (w) (> (length w) 0))
+                        (string-split (byte-substring info (min 10 (length info))) " ")))
+         (name (if (pair? words) (car words) "*new*")))
+    (if (> (string-length name) 16) (substring name 0 16) name)))
+
+(define (proposed-buffers answer)
+  "The buffers ANSWER proposes, as (NAME . TEXT)."
+  (let ((text (or answer "")))
+    (map (lambda (b) (cons (new-buffer-name (fence-info text b)) (caddr b)))
+         (filter (lambda (b) (new-buffer-block? text b)) (fenced-blocks text)))))
+
+(define (expand-file-placeholder body file-text)
+  "BODY with each line that is exactly <<FILE>> replaced by FILE-TEXT."
+  (string-join (map (lambda (line) (if (string=? (trim line) *file-placeholder*) file-text line))
+                    (split-lines body))
+               "\n"))
+
+(define (free-buffer-name name)
+  "NAME, or NAME<2>, NAME<3> ... : the first that is not a buffer with text
+or a file in it.  Selects that buffer."
+  (let loop ((k 1))
+    (let* ((suffix (if (= k 1) "" (concat "<" k ">")))
+           (base (if (> (+ (string-length name) (string-length suffix)) 16)
+                     (substring name 0 (- 16 (string-length suffix)))
+                     name))
+           (candidate (concat base suffix)))
+      (select-buffer candidate)
+      (if (and (= (buffer-size) 0) (not (buffer-filename)) (< k 50))
+          candidate
+          (loop (+ k 1))))))
+
+(define (create-proposed-buffer name body origin)
+  "Ask, then make the buffer NAME from BODY, the file ORIGIN pasted for
+<<FILE>>, in the window of ORIGIN.  True when made."
+  (let* ((needs-file (any (lambda (l) (string=? (trim l) *file-placeholder*)) (split-lines body)))
+         (file-text (if needs-file
+                        (call-in-window-of origin (lambda () (buffer-substring 0 (buffer-size))))
+                        ""))
+         (text (expand-file-placeholder body file-text))
+         (lines (+ 1 (count-byte text 10)))
+         (yes (prompt (concat "Create buffer " name " (" (plural lines "line")
+                              (if needs-file (concat ", with the text of " origin) "") ")? (y/n) ")
+                      "")))
+    (if (not (string-ci=? (trim yes) "y"))
+        (begin (message "No buffer created") #f)
+        (begin
+          (when (assistant-buffer-p (get-buffer-name)) (close-assistant-windows))
+          (let loop ((k 0))             ; to the window of the file asked about
+            (when (and (< k (window-count)) (not (string=? (get-buffer-name) origin)))
+              (other-window) (loop (+ k 1))))
+          (let ((made (free-buffer-name name)))
+            (insert text)
+            (goto-char 0)
+            (message "Buffer " made " created (" (plural lines "line") "); C-x C-w saves it to a file")
+            #t)))))
+
+(define (create-proposed-buffers answer origin)
+  (for-each (lambda (b) (create-proposed-buffer (car b) (cdr b) origin))
+            (proposed-buffers answer)))
+
+;;; ------------------------------------------------------------------
 ;;; A discussion: a window that stays open
 ;;; ------------------------------------------------------------------
 
@@ -581,6 +735,8 @@ after asking, and close the answer window."
   (split-window)
   (other-window)
   (select-buffer *claude-discussion-buffer*)
+  (set-buffer-menu *claude-discussion-buffer*
+                   '(("SEND" "C-c r") ("TANGLE" "C-c t") ("CLOSE" close-discussion-window)))
   (when (= 0 (buffer-size))
     (insert (discussion-header "Claude" origin *you-marker* "C-c r")))
   (end-of-buffer)
@@ -620,13 +776,19 @@ discussion and the file around its cursor."
                (message "Claude answered.  C-c t on a snippet inserts it into " *discussion-origin*)))))))
 
 (define (tangle-from-discussion origin)
-  "Insert the snippet under the cursor into ORIGIN, at its cursor, after asking."
+  "Insert the snippet under the cursor into ORIGIN, at its cursor, after
+asking; on a proposed buffer, make that buffer."
   (let* ((text (buffer-substring 0 (buffer-size)))
+         (block (find (lambda (b) (and (<= (car b) (point)) (<= (point) (cadr b)))) (fenced-blocks text)))
          (code (snippet-at text (point))))
-    (if (not code)
-        (message "Put the cursor on a snippet (between its ``` lines) first")
-        (call-in-window-of origin
-                           (lambda () (confirm-insert code (concat "into " origin " at line " (line-number))))))))
+    (cond
+     ((and block (new-buffer-block? text block))
+      (create-proposed-buffer (new-buffer-name (fence-info text block)) (caddr block) origin))
+     ((not code)
+      (message "Put the cursor on a snippet (between its ``` lines) first"))
+     (else
+      (call-in-window-of origin
+                         (lambda () (confirm-insert code (concat "into " origin " at line " (line-number)))))))))
 
 (define (discussion-tangle)
   "C-c t in the Claude discussion."
@@ -634,6 +796,24 @@ discussion and the file around its cursor."
          (message "C-c t works in the discussion window (C-c r, then d)"))
         ((not *discussion-origin*) (message "The file is unknown"))
         (else (tangle-from-discussion *discussion-origin*))))
+
+;;; ------------------------------------------------------------------
+;;; Closing a discussion window ([CLOSE] in it)
+;;; ------------------------------------------------------------------
+
+(define (discussion-buffer-p name)
+  (member name (list *claude-discussion-buffer* *codex-discussion-buffer*)))
+
+(defcommand (close-discussion-window)
+  "Close the windows showing a Claude or Codex discussion; the discussion
+is kept, and C-c r d (or C-c g d) brings it back."
+  (let loop ((k 0))
+    (when (and (< k (* 2 (window-count))) (> (window-count) 1))
+      (if (discussion-buffer-p (get-buffer-name)) (delete-window) (other-window))
+      (loop (+ k 1))))
+  (when (discussion-buffer-p (get-buffer-name))
+    (select-buffer (or *discussion-origin* *codex-discussion-origin* "*scratch*")))
+  #t)
 
 ;;; ------------------------------------------------------------------
 ;;; Keys

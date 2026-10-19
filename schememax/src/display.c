@@ -63,6 +63,16 @@ point_t segstart(buffer_t *bp, point_t start, point_t finish)
 
 	if (next != NOMARK) {
 		while (next > start && next <= finish) {
+			/*
+			 * The end of the text closes the last row; the cursor
+			 * there is still on that row (that is where it is
+			 * drawn), not on a new empty one, unless a newline
+			 * ends the text.  Without this, up at the end of a
+			 * wrapped file moved to the row it was already on.
+			 */
+			if (next == finish && finish == document_size(bp) &&
+			    finish > 0 && *ptr(bp, finish - 1) != '\n')
+				break;
 			start = next;
 			next = wrap_row_end(bp, start);
 			if (next == NOMARK) break;

@@ -8,11 +8,11 @@
 ;;;; keys that change nothing.
 ;;;;   h j k l, arrows  move          w b e   word forward / back / end
 ;;;;   0 ^ $            line start, first non-blank, last character
-;;;;   gg G             first / last line      Enter  next line
+;;;;   gg G             first line / end of the text; 42G line 42; Enter next line
 ;;;;   %                the matching paren, bracket or brace (d% y% too)
 ;;;;   C-d C-u          page down / up         /  ?  n  N   search
 ;;;;   yy y{motion}     copy lines / to where the motion goes (yw, y$)
-;;;;   v                select by moving, then y copies
+;;;;   v                select by moving, then y copies (to the clipboard too)
 ;;;;   i                back to Emacs (editing)
 ;;;;
 ;;;; M-x vim-mode: all of the above, and the keys that edit, each one
@@ -226,7 +226,9 @@ bracket, the match of the first bracket after P on its line.  #f if none."
         ((string=? key "0") (cons (line-start p) #f))
         ((string=? key "^") (cons (first-non-blank p) #f))
         ((string=? key "$") (cons (last-char-of-line (vertical p (- n 1))) #f))
-        ((string=? key "G") (cons (first-non-blank (point-of-line (if (> *vim-count* 0) n (line-count)))) #t))
+        ;; G: the end of the text, its last character (as M-> does); 42G
+        ;; goes to line 42
+        ((string=? key "G") (cons (if (> *vim-count* 0) (first-non-blank (point-of-line n)) (buffer-size)) #t))
         ((string=? key "gg") (cons (first-non-blank (point-of-line (if (> *vim-count* 0) n 1))) #t))
         ((string=? key "%") (let ((m (matching-bracket p))) (and m (cons m #f))))
         (else #f)))
@@ -248,9 +250,11 @@ bracket, the match of the first bracket after P on its line.  #f if none."
                 (lambda () (when (vim-active?) (set-buffer-read-only! #t)))))
 
 (define (remember text linewise)
+  "TEXT copied or deleted: on the kill ring, what C-y and p paste, and on
+the system clipboard, so Cmd-V (Ctrl-V) pastes it in other programs too."
   (set! *vim-register* (cons text linewise))
   (push-kill text)
-  (fe-set-scrap text))
+  (if *use-system-clipboard* (set-clipboard text) (fe-set-scrap text)))
 
 (define (span start end linewise)
   "START..END, widened to whole lines when LINEWISE."
@@ -459,7 +463,7 @@ bracket, the match of the first bracket after P on its line.  #f if none."
                     (set! *vim-keys* #f)
                     (set! *vim-last-change*
                           (lambda (n) (let ((p (point))) (vim-delete p (min (buffer-size) (+ p len)) #f))))))
-                (begin (vim-copy (car b) (cdr b) #f) (message "Copied")))
+                (begin (vim-copy (car b) (cdr b) #f) (message "Copied to the clipboard")))
             (back-to-normal)
             (vim-reset))
           (begin (set! *vim-pending* key) (message (if (> *vim-count* 0) *vim-count* "") key)))

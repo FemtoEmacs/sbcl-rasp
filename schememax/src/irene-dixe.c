@@ -18,6 +18,9 @@
  *   risktimes T... / risk I N...     numbers at risk under the plot
  *   stat TEXT / note TEXT / remark TEXT
  *
+ * A file that starts with "table 1" is a printed table instead, written by
+ * sketch.scm from a (data-table ...): see "Tables" below.
+ *
  * Unknown records are ignored, so the format can grow (diagnostic-image
  * sketches will add their own).  Only SDL2 and SDL2_ttf are needed.
  */
@@ -90,6 +93,62 @@ static int read_numbers(const char *s, double *out, int max)
 	return n;
 }
 
+/* ------------------------------------------------------------------ */
+/* Tables: a (data-table ...) shown as a table                         */
+/* ------------------------------------------------------------------ */
+
+/* FILE starts with "table 1" and has, besides title, subtitle and remark,
+ *
+ *   header<TAB>STUB<TAB>COLUMN 1<TAB>COLUMN 2 ...
+ *   row DEPTH GROUP<TAB>LABEL<TAB>CELL 1<TAB>CELL 2 ...
+ *
+ * DEPTH is the indentation of a subcategory; GROUP is 1 for a row that has
+ * subcategories under it (drawn in bold).  Cells are already printed text. */
+
+#define MAX_ROWS 512
+#define MAX_COLS 16
+#define CELL_LEN 160
+
+typedef struct { int depth, group, n; char cell[MAX_COLS][CELL_LEN]; } row_t;
+
+static int is_table, ncols, nrows;
+static char header[MAX_COLS][CELL_LEN];
+static row_t rows[MAX_ROWS];
+static int scroll_x, scroll_y;
+static TTF_Font *strong;             /* bold at the body size: headers, groups */
+
+/* Split the tab-separated fields after the first tab of LINE into OUT. */
+static int split_tabs(const char *line, char out[][CELL_LEN], int max)
+{
+	const char *p = strchr(line, '\t');
+	int n = 0;
+	while (p && n < max) {
+		const char *q = strchr(p + 1, '\t');
+		size_t len = q ? (size_t) (q - p - 1) : strlen(p + 1);
+		if (len >= CELL_LEN) len = CELL_LEN - 1;
+		memcpy(out[n], p + 1, len);
+		out[n][len] = '\0';
+		n++;
+		p = q;
+	}
+	return n;
+}
+
+static int read_table_record(const char *tag, const char *line, const char *rest)
+{
+	double v[2];
+	if (!strcmp(tag, "table")) { is_table = 1; return 1; }
+	if (!strcmp(tag, "header")) { ncols = split_tabs(line, header, MAX_COLS); return 1; }
+	if (!strcmp(tag, "row") && nrows < MAX_ROWS && read_numbers(rest, v, 2) == 2) {
+		row_t *row = &rows[nrows++];
+		row->depth = (int) v[0];
+		row->group = (int) v[1];
+		row->n = split_tabs(line, row->cell, MAX_COLS);
+		return 1;
+	}
+	return 0;
+}
+
 static int read_sketch(const char *path)
 {
 	FILE *f = fopen(path, "r");
@@ -102,6 +161,7 @@ static int read_sketch(const char *path)
 		while (len && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
 		if (sscanf(line, "%31s", tag) != 1) continue;
 		const char *rest = skip_fields(line, 1);
+		if (read_table_record(tag, line, rest)) continue;
 		if (!strcmp(tag, "title")) copy_text(title, rest);
 		else if (!strcmp(tag, "subtitle")) copy_text(subtitle, rest);
 		else if (!strcmp(tag, "xaxis") && read_numbers(rest, v, 2) == 2) {
@@ -175,18 +235,22 @@ static const char *font_candidates[] = {
 static int open_fonts(void)
 {
 	int i, px = (int) (13 * scale + 0.5f);
+	if (strong && strong != font) TTF_CloseFont(strong);
 	if (font) TTF_CloseFont(font);
-	if (bold) TTF_CloseFont(bold);
-	font = bold = NULL;
+	if (bold && bold != font) TTF_CloseFont(bold);
+	font = bold = strong = NULL;
 	for (i = 0; font_candidates[i] && !font; i++) {
 		font = TTF_OpenFont(font_candidates[i], px);
 		if (font) {
 			bold = TTF_OpenFont(font_candidates[i], (int) (15 * scale + 0.5f));
 			if (bold) TTF_SetFontStyle(bold, TTF_STYLE_BOLD);
+			strong = TTF_OpenFont(font_candidates[i], px);
+			if (strong) TTF_SetFontStyle(strong, TTF_STYLE_BOLD);
 		}
 	}
 	if (!font) { fprintf(stderr, "irene-dixe: no usable font found\n"); return 0; }
 	if (!bold) bold = font;
+	if (!strong) strong = font;
 	return 1;
 }
 
@@ -265,8 +329,158 @@ static void dot(SDL_Renderer *r, int x, int y, int radius)
 	}
 }
 
+/* ------------------------------------------------------------------ */
+/* Tables: drawing                                                     */
+/* ------------------------------------------------------------------ */
+
+/* The lines of S wrapped to WIDTH pixels, drawn at (X, Y) when R is not
+ * NULL.  Returns the height used. */
+static int wrapped(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y, int width, SDL_Color c)
+{
+	char piece[TEXT_LEN];
+	int h = 0, line_h = TTF_FontLineSkip(f);
+	while (*s) {
+		int n = 0, last_space = -1;
+		while (s[n] && n < TEXT_LEN - 1) {
+			piece[n] = s[n];
+			piece[n + 1] = '\0';
+			if (s[n] == ' ') last_space = n;
+			if (text_width(f, piece) > width) break;
+			n++;
+		}
+		if (s[n] && last_space > 0) n = last_space;
+		if (n == 0) n = 1;
+		memcpy(piece, s, (size_t) n);
+		piece[n] = '\0';
+		if (r) text(r, f, piece, x, y + h, 0, c);
+		h += line_h;
+		s += n;
+		while (*s == ' ') s++;
+	}
+	return h;
+}
+
+typedef struct { int col[MAX_COLS], width, row_h, pad, indent; } table_geometry_t;
+
+static table_geometry_t table_geometry(void)
+{
+	table_geometry_t g;
+	int i, j;
+	g.pad = S(10);
+	g.indent = S(18);
+	g.row_h = TTF_FontLineSkip(font) + S(8);
+	for (j = 0; j < ncols; j++) g.col[j] = text_width(strong, header[j]);
+	for (i = 0; i < nrows; i++)
+		for (j = 0; j < rows[i].n && j < ncols; j++) {
+			int w = text_width(rows[i].group ? strong : font, rows[i].cell[j]);
+			if (j == 0) w += rows[i].depth * g.indent;
+			if (w > g.col[j]) g.col[j] = w;
+		}
+	g.width = 0;
+	for (j = 0; j < ncols; j++) g.width += g.col[j] + 2 * g.pad;
+	return g;
+}
+
+/* The picture the whole table needs, at the current scale. */
+static void table_size(int *W, int *H)
+{
+	SDL_Color c = { 0, 0, 0, 255 };
+	table_geometry_t g = table_geometry();
+	int width = g.width, i;
+	if (text_width(bold, title) > width) width = text_width(bold, title);
+	if (width > S(1400)) width = S(1400);
+	int h = S(10) + TTF_FontLineSkip(bold) + TTF_FontLineSkip(font) + S(14)
+		+ g.row_h * (nrows + 1) + S(14);
+	for (i = 0; i < ntexts; i++) h += wrapped(NULL, font, texts[i], 0, 0, width, c) + S(3);
+	*W = width + S(32);
+	*H = h + TTF_FontLineSkip(font) + S(16);
+}
+
+static void clamp_scroll(int W, int H)
+{
+	int tw, th;
+	table_size(&tw, &th);
+	if (scroll_x > tw - W) scroll_x = tw - W;
+	if (scroll_y > th - H) scroll_y = th - H;
+	if (scroll_x < 0) scroll_x = 0;
+	if (scroll_y < 0) scroll_y = 0;
+}
+
+static void draw_table(SDL_Renderer *r, int W, int H)
+{
+	SDL_Color ink = { 30, 30, 30, 255 }, grey = { 110, 110, 110, 255 };
+	table_geometry_t g = table_geometry();
+	int x0 = S(16) - scroll_x, y = S(10) - scroll_y, i, j;
+	int width = g.width;
+	if (text_width(bold, title) > width) width = text_width(bold, title);
+	if (width > S(1400)) width = S(1400);
+
+	SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+	SDL_RenderClear(r);
+	y += wrapped(r, bold, title, x0, y, width, ink);
+	y += wrapped(r, font, subtitle, x0, y, width, grey) + S(14);
+
+	int text_dy = (g.row_h - TTF_FontLineSkip(font)) / 2;
+	SDL_Rect rule = { x0, y, g.width, S(2) };
+	SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
+	SDL_RenderFillRect(r, &rule);
+	/* the header: the stub on the left, the column headers centred */
+	int x = x0;
+	for (j = 0; j < ncols; j++) {
+		int cw = g.col[j] + 2 * g.pad;
+		if (j == 0) text(r, strong, header[j], x + g.pad, y + text_dy, 0, ink);
+		else text(r, strong, header[j], x + cw / 2, y + text_dy, 1, ink);
+		x += cw;
+	}
+	y += g.row_h;
+	rule.y = y;
+	rule.h = S(1);
+	SDL_RenderFillRect(r, &rule);
+
+	for (i = 0; i < nrows; i++) {
+		if (i % 2) {                   /* banded rows, so the eye keeps the line */
+			SDL_Rect band = { x0, y, g.width, g.row_h };
+			SDL_SetRenderDrawColor(r, 244, 245, 247, 255);
+			SDL_RenderFillRect(r, &band);
+		}
+		TTF_Font *f = rows[i].group ? strong : font;
+		x = x0;
+		for (j = 0; j < ncols; j++) {
+			int cw = g.col[j] + 2 * g.pad;
+			const char *s = j < rows[i].n ? rows[i].cell[j] : "";
+			if (j == 0) text(r, f, s, x + g.pad + rows[i].depth * g.indent, y + text_dy, 0, ink);
+			else text(r, f, s, x + cw / 2, y + text_dy, 1, ink);
+			x += cw;
+		}
+		y += g.row_h;
+	}
+	rule.y = y;
+	rule.h = S(2);
+	SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
+	SDL_RenderFillRect(r, &rule);
+	y += S(10);
+	for (i = 0; i < ntexts; i++) y += wrapped(r, font, texts[i], x0, y, width, grey) + S(3);
+
+	/* the footer stays put while the table scrolls */
+	int line_h = TTF_FontLineSkip(font);
+	SDL_Rect foot = { 0, H - line_h - S(10), W, line_h + S(10) };
+	SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+	SDL_RenderFillRect(r, &foot);
+	if (for_file)
+		text(r, font, "irene-dixe: shown from the textified table, not the original page",
+		     S(10), H - line_h - S(6), 0, grey);
+	else if (status[0])
+		text(r, font, status, S(10), H - line_h - S(6), 0, grey);
+	else {
+		text(r, font, "arrows, wheel or PgUp/PgDn scroll; s saves a picture; q closes",
+		     W - S(10), H - line_h - S(6), 2, grey);
+		text(r, font, "irene-dixe: shown from the textified table", S(10), H - line_h - S(6), 0, grey);
+	}
+}
+
 static void draw(SDL_Renderer *r, int W, int H)
 {
+	if (is_table) { draw_table(r, W, H); return; }
 	SDL_Color ink = { 30, 30, 30, 255 }, grey = { 110, 110, 110, 255 };
 	int line_h = TTF_FontLineSkip(font), nseries = 0, i;
 	for (i = 0; i < MAX_SERIES; i++) if (series[i].used) nseries = i + 1;
@@ -602,6 +816,8 @@ static int ends_with(const char *s, const char *tail)
  * on macOS it can "succeed" without the file appearing. */
 static int picture_to(const char *out, int W, int H)
 {
+	int sx = scroll_x, sy = scroll_y;
+	if (is_table) { table_size(&W, &H); scroll_x = scroll_y = 0; }   /* the whole table */
 	SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, SDL_PIXELFORMAT_ARGB8888);
 	SDL_Renderer *r = s ? SDL_CreateSoftwareRenderer(s) : NULL;
 	int ok = 0;
@@ -614,6 +830,8 @@ static int picture_to(const char *out, int W, int H)
 		SDL_DestroyRenderer(r);
 	}
 	if (s) SDL_FreeSurface(s);
+	scroll_x = sx;
+	scroll_y = sy;
 	if (ok) {                          /* trust the disk, not the return code */
 		FILE *f = fopen(out, "rb");
 		long size = 0;
@@ -668,8 +886,17 @@ int main(int argc, char **argv)
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "irene-dixe: %s\n", SDL_GetError()); return 1; }
 	char window_title[TEXT_LEN + 16];
 	snprintf(window_title, sizeof(window_title), "irene-dixe: %s", title[0] ? title : "plot");
+	int width = 1000, height = 640;
+	if (is_table) {                      /* as large as the table, within reason */
+		if (!open_fonts()) return 1;
+		table_size(&width, &height);
+		if (width < 520) width = 520;
+		if (width > 1400) width = 1400;
+		if (height < 240) height = 240;
+		if (height > 900) height = 900;
+	}
 	SDL_Window *w = SDL_CreateWindow(window_title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-					 1000, 640, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+					 width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 	if (!w) { fprintf(stderr, "irene-dixe: %s\n", SDL_GetError()); return 1; }
 	SDL_Renderer *r = SDL_CreateRenderer(w, -1, SDL_RENDERER_ACCELERATED);
 	if (!r) r = SDL_CreateRenderer(w, -1, SDL_RENDERER_SOFTWARE);
@@ -684,15 +911,28 @@ int main(int argc, char **argv)
 		scale = ww > 0 ? (float) W / (float) ww : 1.0f;
 		if (scale < 1.0f) scale = 1.0f;
 		if (scale != last_scale) { if (!open_fonts()) return 1; last_scale = scale; }
+		if (is_table) clamp_scroll(W, H);
 		draw(r, W, H);
 		SDL_RenderPresent(r);
 		SDL_Event e;
 		if (!SDL_WaitEvent(&e)) break;
 		do {
 			if (e.type == SDL_QUIT) running = 0;
-			else if (e.type == SDL_KEYDOWN) {
+			else if (e.type == SDL_MOUSEWHEEL && is_table) {
+				scroll_y -= e.wheel.y * S(40);
+				scroll_x -= e.wheel.x * S(40);
+			} else if (e.type == SDL_KEYDOWN) {
 				SDL_Keycode k = e.key.keysym.sym;
+				int page = H - S(60);
 				if (k == SDLK_q || k == SDLK_ESCAPE) running = 0;
+				else if (is_table && k == SDLK_DOWN) scroll_y += S(40);
+				else if (is_table && k == SDLK_UP) scroll_y -= S(40);
+				else if (is_table && k == SDLK_RIGHT) scroll_x += S(60);
+				else if (is_table && k == SDLK_LEFT) scroll_x -= S(60);
+				else if (is_table && (k == SDLK_PAGEDOWN || k == SDLK_SPACE)) scroll_y += page;
+				else if (is_table && k == SDLK_PAGEUP) scroll_y -= page;
+				else if (is_table && k == SDLK_HOME) scroll_x = scroll_y = 0;
+				else if (is_table && k == SDLK_END) scroll_y = 1 << 30;
 				else if (k == SDLK_s) {
 					char out[4096];
 					if (save_as) snprintf(out, sizeof(out), "%s", save_as);

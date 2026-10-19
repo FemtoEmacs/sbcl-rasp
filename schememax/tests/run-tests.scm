@@ -252,6 +252,20 @@
 (check "Statistics given as rows: medians and p-values in words"
        (filter (lambda (l) (string-prefix? "stat" l)) (km-landmark-lines))
        '("stat Median, A: 15 month" "stat Median, B: not reached" "stat p < .001 (A vs B)" "stat p = .2"))
+(define *table-sample* "(data-table :schema schememax/data-table/1 :table \"1\" :caption \"Cohort\"\n  :provenance (:source \"p.pdf\" :pdf-page 3) :basis :printed :stub \"Characteristic\"\n  :columns ((:id c1 :label \"A, No. (%)\") (:id c2 :label \"p\"))\n  :rows ((:label \"Stage\" :cells (nil (:< 0.001))\n          :rows ((:label \"Local\" :cells ((:count 18053 :percent 82.3) nil))))\n         (:label \"Median\" :cells ((:value 33.0 :ci (141 :na)) \"—\")))\n  :notes (\"NA, not reached.\") :abbreviations nil)")
+(check "C-c p finds a data table"
+       (let ((span (form-at *table-sample* 40))) (and span (= (car span) 0))) #t)
+(check "A data table becomes header and row records, cells as printed"
+       (table-drawing *table-sample*)
+       (list "table 1" "title Table 1. Cohort" "subtitle [p.pdf, PDF page 3]"
+             "header\tCharacteristic\tA, No. (%)\tp"
+             "row 0 1\tStage\t\t<0.001" "row 1 0\tLocal\t18,053 (82.3)\t"
+             "row 0 0\tMedian\t33.0 (141–NA)\t—" "remark NA, not reached."))
+(check "Without a display a data table is aligned text"
+       (let ((s (text-table (table-drawing *table-sample*))))
+         (list (and (string-search "  Local         18,053 (82.3)" s) #t)
+               (and (string-search "Median          33.0 (141–NA)" s) #t)))
+       '(#t #t))
 (check "Without a display the plot is a character sketch with a legend"
        (let ((s (text-plot (km-sample-lines))))
          (list (and (string-search "A = Arm A" s) #t) (and (string-search "Months" s) #t)))
@@ -329,6 +343,29 @@
        (let ((text (lines "Claude:" "```" "(one)" "```" "and" "```" "(two)" "```" "")))
          (list (snippet-at text 2) (snippet-at text 14) (snippet-at text 24) (snippet-at text 30)))
        '(#f "(one)" #f "(two)"))
+(check "an answer can propose a buffer, with <<FILE>> for the whole file"
+       (proposed-buffers (lines "Here:" "```new-buffer naia-questions" "1. Why?" "" "<<FILE>>" "```"))
+       '(("naia-questions" . "1. Why?\n\n<<FILE>>")))
+(check "a proposed buffer is not code to insert"
+       (proposed-snippets (lines "```new-buffer q" "1. Why?" "```" "```lisp" "(f)" "```")) '("(f)"))
+(check "a buffer name is cut to the 16 characters the core keeps"
+       (car (car (proposed-buffers (lines "```new-buffer sarcoma-naia-questions" "x" "```"))))
+       "sarcoma-naia-que")
+(check "<<FILE>> becomes the file's text"
+       (expand-file-placeholder "1. Why?\n<<FILE>>\nend" "paper line 1\npaper line 2")
+       "1. Why?\npaper line 1\npaper line 2\nend")
+(check "both assistants are told how to propose a buffer"
+       (list (and (string-search "```new-buffer NAME" *assistant-instructions*) #t)
+             (and (string-search "```new-buffer NAME" *codex-instructions*) #t))
+       '(#t #t))
+(check "a whole paper fits in what the assistants are sent" (>= *assistant-context-bytes* 200000) #t)
+(check "the assistants never see their own windows or the help page"
+       (every (lambda (n) (member n *private-buffer-names*))
+              (list *assistant-buffer* *claude-request-buffer* *claude-discussion-buffer*
+                    *codex-answer-buffer* *codex-request-buffer* *codex-discussion-buffer* *help-buffer*))
+       #t)
+(check "a discussion window has no [?]: it is one of the assistants' windows"
+       (and (ai-menu-buffer-p *claude-discussion-buffer*) (ai-menu-buffer-p *codex-discussion-buffer*) #t) #t)
 (check "an unclosed fence has no snippet" (proposed-snippets (lines "```" "x")) '())
 (check "the last You: of a discussion"
        (let ((text (lines "head" "You:" "one" "Claude:" "ok" "" "You:" "two")))
@@ -564,6 +601,28 @@
              (ttfy-failed? "# A converted paper"))
        '(#t #t #f))
 (check "TTFY providers" (map ttfy-choice-provider '(1 2)) '("codex" "claude"))
+(check "TTFY finds pipe tables, not fenced ones"
+       (ttfy-pipe-tables (split-lines "```\n| a | b |\n|---|---|\n```\n\n| x | y |\n|---|---|\n| 1 | 2 |\n| no rule |\n"))
+       '((5 . 8)))
+(check "TTFY: the same table in two layouts comes out the same"
+       (equal? (ttfy-canonical "(data-table :table \"2\"\n    :rows ((:label \"a\" :cells (33.0 (:< 0.001)))\n (:label \"b\" :cells (nil :na))))")
+               (ttfy-canonical "(data-table\n :table \"2\" :rows ((:label \"a\"\n :cells (33.0 (:< 0.001))) (:label \"b\" :cells (nil :na))))"))
+       #t)
+(check "TTFY layout keeps printed numbers and puts one key per line"
+       (ttfy-canonical "(data-table :table \"1\" :cells (33.0 1.00))")
+       "(data-table\n  :table \"1\"\n  :cells (33.0 1.00))")
+(check "TTFY reports a lisp block that does not read"
+       (ttfy-unreadable-blocks (split-lines "```lisp\n(data-table :x (1\n```\n"))
+       '("the lisp block at line 1 does not read as one S-expression"))
+(check "TTFY rewrites a pipe table with the provider's S-expression"
+       (ttfy-fix-tables (lambda (prompt) "```lisp\n(data-table :table \"1\"\n   :rows ((:label \"a\" :cells (1))))\n```")
+                        "T\n\n| A | B |\n|---|---|\n| a | 1 |\n\nEnd" "")
+       (cons "T\n\n```lisp\n(data-table\n  :table \"1\"\n  :rows ((:label \"a\" :cells (1))))\n```\n\nEnd" '()))
+(check "TTFY keeps a table it could not rewrite and says so"
+       (cdr (ttfy-fix-tables (lambda (prompt) "Assistant failed (timeout)") "| A |\n|---|\n| a |" ""))
+       '("the pipe table at line 1 could not be rewritten as an S-expression"))
+(check "TTFY guidelines define the data-table schema"
+       (and (string-search "schememax/data-table/1" (ttfy-read-guidelines)) #t) #t)
 (check "TTFY is in the MORE window" (and (assoc "TTFY" *full-menu*) #t) #t)
 (check "TTFY is a mode line button, kept in narrow windows"
        (let loop ((w 40))

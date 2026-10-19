@@ -477,57 +477,8 @@ char *get_key_name()
 	return key_return->key_name;
 }
 
+/* the answer to PROMPT, edited in BUF: see lineedit.c */
 int getinput(char *prompt, char *buf, int nbuf, int flag)
 {
-	int cpos = 0;
-	int c;
-	int start_col = strlen(prompt);
-
-	screen_mvaddstr(MSGLINE, 0, prompt);
-	screen_clrtoeol();
-
-	if (flag == F_CLEAR) buf[0] = '\0';
-
-	/* if we have a default value print it and go to end of it */
-	if (buf[0] != '\0') {
-		screen_addstr(buf);
-		cpos = strlen(buf);
-	}
-
-	for (;;) {
-		screen_refresh();
-		c = read_key_byte();
-		/* ignore control keys other than backspace, cr, lf */
-		if (c < 32 && c != 0x07 && c != 0x08 && c != 0x0a && c != 0x0d)
-			continue;
-
-		switch(c) {
-		case 0x0a: /* cr, lf */
-		case 0x0d:
-			buf[cpos] = '\0';
-			return (cpos > 0 ? TRUE : FALSE);
-
-		case 0x07: /* ctrl-g */
-			return FALSE;
-
-		case 0x7f: /* del, erase */
-		case 0x08: /* backspace */
-			if (cpos == 0)
-				continue;
-
-			screen_move(MSGLINE, start_col + cpos - 1);
-			screen_addch(' ');
-			screen_move(MSGLINE, start_col + cpos - 1);
-			buf[--cpos] = '\0';
-			break;
-
-		default:
-			if (cpos < nbuf -1) {
-				screen_addch(c);
-				buf[cpos++] = c;
-				buf[cpos] ='\0';
-			}
-			break;
-		}
-	}
+	return line_edit(prompt, buf, nbuf, flag, NULL);
 }

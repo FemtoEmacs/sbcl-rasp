@@ -14,3 +14,13 @@ git/next-commit.txt
 .DS_Store
 # backups of edited files
 bkp/
+
+# Local paper PDFs
+/paper/papers-in-pdf/
+
+# Full transcriptions of copyrighted papers (benchmark material, kept local)
+/paper/sarcoma-hardy-benchmark.md
+/paper/ttfy/newel-simon-physical-symbol-sys-hypothesis.md
+
+# Files Claude delivers into the chat, synced here
+/schememax/Claude outputs/

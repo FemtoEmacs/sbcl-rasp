@@ -78,88 +78,64 @@ static size_t common_prefix(int count)
 	return best;
 }
 
+/*
+ * TAB in a file-name prompt (lineedit.c calls it): the answer in BUF, LEN
+ * bytes; AGAIN when the key before was TAB too.  The new length.
+ */
+static int complete_name(char *buf, int nbuf, int len, int again)
+{
+	static int cycle = -1;          /* the next name for TAB, or -1: look for names */
+	static int count = 0;
+	size_t name_len;
+	const char *name;
+
+	if (!again) cycle = -1;
+	if (cycle < 0) {
+		size_t shared, first_len;
+		const char *first;
+
+		buf[len] = '\0';
+		free(completions);
+		completions = NULL;
+		(void) call_lisp_event("complete-file", buf);
+		count = completion_count();
+		if (count == 0)
+			return len;             /* nothing matches */
+		first = completion_nth(0, &first_len);
+		shared = (count == 1) ? first_len : common_prefix(count);
+		if (count == 1 || (int) shared > len) {
+			/*
+			 * the part all the names share; the next TAB looks
+			 * again: at the names, or inside the directory that
+			 * was the only one
+			 */
+			cycle = -1;
+			return set_text(buf, nbuf, first, shared);
+		}
+		cycle = 0;
+	}
+	name = completion_nth(cycle, &name_len);
+	cycle = (cycle + 1) % count;
+	return set_text(buf, nbuf, name, name_len);
+}
+
 int getfilename(char *prompt, char *buf, int nbuf)
 {
-	int cpos = 0;      /* length of the text typed */
-	int cycle = -1;    /* the next name for TAB, or -1: look for names */
-	int count = 0, c;
-
-	ZERO_STRING(buf);
+	int flag = F_CLEAR;
 
 	for (;;) {
-		display_prompt_and_response(prompt, buf);
-		c = read_key_byte(); /* get a character from the user */
-		if (c != 0x09)
-			cycle = -1;  /* any other key: TAB looks again */
-
-		switch(c) {
-		case 0x0a: /* cr, lf */
-		case 0x0d:
-			buf[cpos] = 0;
-			if (buf[0] == '~' && buf[1] == '/' && getenv("HOME")) {
-				size_t home_len = strlen(getenv("HOME"));
-				if (home_len + strlen(buf + 1) >= (size_t)nbuf) {
-					msg("Expanded filename is too long; shorten the path");
-					break;
-				}
-				memmove(buf + home_len, buf + 1, strlen(buf + 1) + 1);
-				memcpy(buf, getenv("HOME"), home_len);
-			}
-			return (cpos > 0 ? TRUE : FALSE);
-
-		case 0x07: /* ctrl-g, abort */
+		if (!line_edit(prompt, buf, nbuf, flag, complete_name))
 			return FALSE;
-
-		case 0x7f: /* del, erase */
-		case 0x08: /* backspace */
-			if (cpos == 0)
+		flag = F_NONE;              /* again: keep what was typed */
+		if (buf[0] == '~' && buf[1] == '/' && getenv("HOME")) {
+			size_t home_len = strlen(getenv("HOME"));
+			if (home_len + strlen(buf + 1) >= (size_t) nbuf) {
+				msg("Expanded filename is too long; shorten the path");
 				continue;
-			buf[--cpos] = '\0';
-			break;
-
-		case  0x15: /* C-u kill */
-			cpos = 0;
-			buf[0] = '\0';
-			break;
-
-		case 0x09: /* TAB, complete file name */
-			if (cycle < 0) {
-				size_t shared, first_len;
-				const char *first;
-				buf[cpos] = '\0';
-				free(completions);
-				completions = NULL;
-				(void) call_lisp_event("complete-file", buf);
-				count = completion_count();
-				if (count == 0)
-					break;          /* nothing matches */
-				first = completion_nth(0, &first_len);
-				shared = (count == 1) ? first_len : common_prefix(count);
-				if (count == 1 || (int) shared > cpos) {
-					/*
-					 * the part all the names share; the next TAB
-					 * looks again: at the names, or inside the
-					 * directory that was the only one
-					 */
-					cpos = set_text(buf, nbuf, first, shared);
-					break;
-				}
-				cycle = 0;
 			}
-			{
-				size_t len;
-				const char *s = completion_nth(cycle, &len);
-				cpos = set_text(buf, nbuf, s, len);
-				cycle = (cycle + 1) % count;
-			}
-			break;
-
-		default:
-			if (cpos < nbuf - 1) {
-				  buf[cpos++] = c;
-				  buf[cpos] = '\0';
-			}
-			break;
+			memmove(buf + home_len, buf + 1, strlen(buf + 1) + 1);
+			memcpy(buf, getenv("HOME"), home_len);
 		}
+		return TRUE;
 	}
 }

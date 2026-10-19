@@ -239,119 +239,83 @@ void list_bindings()
 	(void)popup_window(bp->b_bname);
 }
 
+/* the window M-x shows the matching commands in, while it asks */
+static window_t *mx_window = NULL;
+static buffer_t *mx_buffer = NULL;
+
+/* TAB at the M-x prompt (lineedit.c calls it): the longest common start
+ * of the matching commands; a second TAB lists them in a window */
+static int complete_command(char *buf, int nbuf, int len, int again)
+{
+	string_list_t *cmd_list, *sl;
+	char *shortest_match;
+	int column = 0;
+
+	buf[len] = '\0';
+	cmd_list = match_functions(buf);
+	shortest_match = shortest_common_string(cmd_list);
+	if (strlen(shortest_match) == 0) {
+		free_string_list(cmd_list);
+		return len;
+	}
+	strncpy(buf, shortest_match, (size_t) (nbuf - 1));
+	buf[nbuf - 1] = '\0';
+	if (again || mx_window != NULL) {
+		zero_buffer(mx_buffer);
+		mx_window = popup_window(mx_buffer->b_bname); /* does nothing if already exists */
+		/* the matching commands, wrapped 30 characters before the edge */
+		for (sl = cmd_list; sl != NULL; sl = sl->next) {
+			append_string(mx_buffer, sl->string);
+			append_string(mx_buffer, "  ");
+			column += (2 + strlen(sl->string));
+			if (column >= screen_cols() - 30) {
+				append_string(mx_buffer, "\n");
+				column = 0;
+			}
+		}
+		display(mx_window, TRUE);
+	}
+	free_string_list(cmd_list);
+	return (int) strlen(buf);
+}
+
 /* Esc-x execute command prompt */
 void execute_command()
 {
-	buffer_t *bp = NULL;
-	window_t *wp = NULL;
+	window_t *wp;
 	string_list_t *cmd_list, *sl;
 	void_func funct = NULL;
-
-	int process_input = 1;
-	int tab_count = 0;
-	int column = 0;
-	int cpos = 0;
-	int ch;
+	int flag = F_CLEAR;
 	char command_name[STRBUF_M + 1];
 	char prompt[] = "Execute command: ";
-	char *shortest_match;
 
 	command_name[0] = '\0';
-	bp = find_buffer(str_completions, TRUE);
-	assert(bp != NULL);
+	mx_window = NULL;
+	mx_buffer = find_buffer(str_completions, TRUE);
+	assert(mx_buffer != NULL);
 
-	display_prompt_and_response(prompt, command_name);
-	cpos = strlen(command_name);
-
-	while (process_input) {
-		ch = read_key_byte();
-		/* ignore control keys other than C-g, TAB, backspace, del, CR, ESC */
-		if (ch < 32 && ch != 7 && ch != 9 && ch != 8 && ch != 13 && ch != 10 && ch != 27)
-			continue;
-
-		switch(ch) {
-		case 27: /* esc */
-			tab_count = 0;
-			screen_flushinp(); /* discard any escape sequence without writing in buffer */
-			break;
-
-		case 7: /* ctrl-g */
+	for (;;) {
+		if (!line_edit(prompt, command_name, STRBUF_M, flag, complete_command)) {
 			command_name[0] = '\0';
-			process_input = 0;
-			break;
-
-		case 13: /* CR, LF, only allow if there is 1 matched command waiting */
-		case 10:
-			cmd_list = match_functions(command_name);
-			/* one candidate, or one that is exactly what was typed */
-			for (sl = cmd_list; sl != NULL; sl = sl->next)
-				if (strcmp(sl->string, command_name) == 0)
-					break;
-			if (sl == NULL && 1 != count_string_list(cmd_list)) {
-				free_string_list(cmd_list);
-				continue;
-			}
-			if (sl == NULL)
-				strcpy(command_name, cmd_list->string);
-
-			free_string_list(cmd_list);
-			process_input = 0;
-			break;
-
-		case 9: /* TAB */
-			tab_count++;
-			cmd_list = match_functions(command_name);
-			shortest_match = shortest_common_string(cmd_list);
-			if (strlen(shortest_match) == 0) {
-				free_string_list(cmd_list);
-				break;
-			}
-
-			strcpy(command_name, shortest_match);
-			cpos = strlen(command_name);
-
-			if (tab_count > 1 || wp != NULL) {
-				zero_buffer(bp);
-				wp = popup_window(bp->b_bname); /* does nothing if already exists */
-				column = 0;
-
-				/* show matched commands, start wrapping from 30 chars from end of screen */
-				for (sl = cmd_list; sl != NULL; sl = sl->next) {
-					append_string(bp, sl->string);
-					append_string(bp, "  ");
-					column += (2 + strlen(sl->string));
-
-					if (column >= screen_cols() - 30) {
-						append_string(bp, "\n");
-						column = 0;
-					}
-				}
-				display(wp, TRUE);
-			}
-			free_string_list(cmd_list);
-			display_prompt_and_response(prompt, command_name);
-			screen_refresh();
-			break;
-
-		case 0x7f: /* del, erase */
-		case 0x08: /* backspace */
-			tab_count = 0;
-			if (cpos == 0)
-				continue;
-			command_name[--cpos] = '\0';
-			display_prompt_and_response(prompt, command_name);
-			break;
-
-		default:
-			tab_count = 0;
-			if (cpos < STRBUF_M - 1) {
-				command_name[cpos++] = ch;
-				command_name[cpos] = '\0';
-				display_prompt_and_response(prompt, command_name);
-			}
 			break;
 		}
+		flag = F_NONE;          /* again: keep what was typed */
+		/* RET: one candidate, or one that is exactly what was typed */
+		cmd_list = match_functions(command_name);
+		for (sl = cmd_list; sl != NULL; sl = sl->next)
+			if (strcmp(sl->string, command_name) == 0)
+				break;
+		if (sl == NULL && 1 != count_string_list(cmd_list)) {
+			free_string_list(cmd_list);
+			continue;
+		}
+		if (sl == NULL)
+			strcpy(command_name, cmd_list->string);
+		free_string_list(cmd_list);
+		break;
 	}
+	wp = mx_window;
+	mx_window = NULL;
 
 	/* restore to previous window states */
 	if (wp != NULL && wp->w_hijack != NULL)
