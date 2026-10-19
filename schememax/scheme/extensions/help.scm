@@ -4,26 +4,39 @@
 ;;;; press C-x C-r; no rebuild.
 ;;;;
 ;;;; C-h or F1 shows this page ([?] on the mode line offers it, ChatGPT and
-;;;; Claude: menu.scm).  The arrows (or C-n and C-p) scroll it; C-c r
-;;;; and C-c g ask Claude or ChatGPT (Codex); any other key goes back to the
-;;;; file, closing the assistants' windows.
+;;;; Claude: menu.scm).  The page is read-only (read-only.scm): j k, the
+;;;; arrows, gg G, C-d C-u, / n and % move; i or [CLOSE] returns to the page
+;;;; that asked for help, where the cursor was.  C-c r and C-c g close it
+;;;; and ask Claude or ChatGPT (Codex) about that page.
 
 (define *help-buffer* "*schememax-help*")
 
 ;; The help page's mode line has [CLOSE] instead of [?] (menu.scm): help
 ;; from help would only reopen the page that is already shown.
-(define *help-close-requested* #f)
+(define *help-origin* #f)          ; (buffer-name . point) that asked for help
+
+(define (help-page-p) (string=? (get-buffer-name) *help-buffer*))
 
 (defcommand (help-close)
-  "[CLOSE] on the help page: back to the file."
-  (set! *help-close-requested* #t))
+  "i or [CLOSE] on the help page: back to the page that asked for help."
+  (let ((origin *help-origin*))
+    (set! *help-origin* #f)
+    (when (bound? '*vim-states*)
+      (table-remove! *vim-states* *help-buffer*)
+      (table-remove! *vim-kinds* *help-buffer*))
+    (when (help-page-p)
+      (select-buffer (if origin (car origin) "*scratch*")))
+    (kill-buffer *help-buffer*)
+    (when origin (goto-char (cdr origin)))
+    (clear-message-line)
+    #t))
 
 (define *help-header*
-  "Arrows or Ctrl-n and Ctrl-p to scroll down and up.
-Ctrl-c r (hold down the Ctrl key and press c; release and press r) to ask
-help from Claude.  Ctrl-c g to ask help from ChatGPT.  You must subscribe
-to ask help from them.  Any other key, leave this page and return to the
-file you are editing.")
+  "PRESS i (OR CLICK [CLOSE]) TO CLOSE THIS PAGE and return to your file.
+This page is read-only: j and k (or the arrows) move down and up, Ctrl-d
+and Ctrl-u a page, gg and G to the top and the end, / searches (n: again).
+Ctrl-c r (hold down the Ctrl key and press c; release and press r) asks
+Claude for help, Ctrl-c g asks ChatGPT; you must subscribe to them.")
 
 (define *help-notation*
   "C-x means Ctrl-x.  M-x means Esc, then x (or Alt-x; Option-x on a Mac).")
@@ -126,7 +139,8 @@ file you are editing.")
      ("C-c w" "word wrap on or off for this file (also MORE > Word wrap)")
      ("M-;" "comment: add one, or (un)comment the region")
      ("C-q" "insert the next key as it is (C-q TAB: a tab)")
-     ("INS" "overwrite mode on or off"))
+     ("INS" "overwrite mode on or off")
+     ("C-x C-q" "read-only on or off: keys move, nothing edits (see below)"))
     ("Searching and replacing"
      ("C-s" "search forward (C-s again: next match)")
      ("C-r" "search backward")
@@ -156,6 +170,26 @@ file you are editing.")
      ("C-c s" "in that window: run the command; its output follows it")
      ("C-x C-r" "reload the Scheme scripts (no rebuild needed)"))))
 
+;;; Read-only and vim-mode (read-only.scm): the keys, as in nvim's normal mode.
+(define *help-vim*
+  '(("Read-only and vim mode (M-x read-only or C-x C-q; M-x vim-mode)")
+    ("h j k l" "left, down, up, right (the arrows too; space: right)")
+    ("w b e" "next word, back a word, end of the word")
+    ("0 ^ $" "start of the line, its first non-blank, its last character")
+    ("gg G" "first line, last line (5G: line 5)")
+    ("Enter + -" "next line, next line, previous line (at the first non-blank)")
+    ("C-d C-u" "a page down, a page up")
+    ("/ ? n N" "search forward / back; next / previous match")
+    ("%" "jump to the matching paren, bracket or brace (d% y% too)")
+    ("5j 3w ..." "a count first repeats a motion")
+    ("yy y{motion}" "copy lines, or to where the motion goes (yw, y$); 3yy: 3 lines")
+    ("v" "select by moving; then y copies (vim-mode: d deletes)")
+    ("i" "back to Emacs, from either mode (on this help page: close it)")
+    ("vim-mode" "dd d{motion} x: delete; p P: paste; u C-r: undo, redo")
+    ("" "o O: open a line below/above; a A I: edit after/at end/at start")
+    ("" ". repeats the last change; J joins lines; r{char} replaces one")
+    ("" ":w saves; :wq or :x save and quit; :q quits; :42 line 42")))
+
 ;;; Commands with no key of their own: type M-x and the name (TAB completes).
 (define *help-commands*
   '(("M-x commands (M-x, then the name; TAB completes)")
@@ -177,6 +211,8 @@ file you are editing.")
     ("assistant-status" "how the assistant reaches Claude")
     ("codex-status" "how the assistant reaches ChatGPT (Codex)")
     ("describe-key" "what does a key do? (also C-x ?)")
+    ("read-only" "keys move and copy as in nvim, nothing edits (C-x C-q)")
+    ("vim-mode" "read-only's keys plus dd x p o O u, as in nvim")
     ("plot-at-point" "draw the plot table at the cursor (also C-c p)")
     ("plot-save" "save the plot table at the cursor as a picture, no window")))
 
@@ -203,6 +239,12 @@ file you are editing.")
            (map (lambda (e) (string-append "  " (pad-right (car e) width) " " (cadr e) "\n"))
                 entries))))
 
+(define (help-vim-text)
+  (let ((width (apply max 11 (map (lambda (e) (length (car e))) (cdr *help-vim*)))))
+    (apply string-append "\n" (caar *help-vim*) "\n"
+           (map (lambda (e) (string-append "  " (pad-right (car e) width) " " (cadr e) "\n"))
+                (cdr *help-vim*)))))
+
 (define (help-text)
   (let ((section (lambda (title entries)
                    (apply string-append "\n" title "\n"
@@ -211,6 +253,7 @@ file you are editing.")
     (string-append *help-header* "\n\n" *help-notation* "\n"
                    (apply string-append (map (lambda (s) (section (car s) (cdr s))) *help-sections*))
                    (help-commands-text)
+                   (help-vim-text)
                    (let ((others (help-other-keys)))
                      (if (pair? others) (section "Other keys" others) "")))))
 
@@ -224,61 +267,22 @@ file you are editing.")
   (set-window-start (point)))
 
 (defcommand (help)
-  "The keys, on a page of their own."
-  (let* ((origin (get-buffer-name))
-         (from (if (assistant-buffer-p origin) (file-behind-assistant) origin))
-         (opoint (point))
-         (text (help-text))
-         (lines (+ 1 (count-byte text 10)))
-         (top 1)
-         (action #f))
-    (set! *help-in-progress* #t)
-    (set! *help-pending-menu-action* #f)
-    (set! *help-close-requested* #f)
-    (select-buffer *help-buffer*)
-    (erase-buffer)
-    (insert text)
-    (fe-set-modified 0)
-    (show-help-line 1)
-    (dynamic-wind
-     (lambda () #f)
-     (lambda ()
-       (let loop ()
-         (message "Help: arrows scroll; C-c r Claude, C-c g ChatGPT; any other key returns to " from)
-         (update-display)
-         (let* ((k (get-key))
-                (name (if (string=? k "") (get-key-name) k))
-                (rows (max 1 (window-rows)))
-                (continue
-                 (cond ((string=? (get-key-binding) "mouse")
-                        (fe-mouse-event)
-                        (cond (*help-close-requested* (set! *help-close-requested* #f) #f)
-                              (*help-pending-menu-action*
-                               (set! action *help-pending-menu-action*) #f)
-                              (else #t)))
-                       ((member name '("down" "C-n")) (set! top (help-scroll top 1 lines rows)) #t)
-                       ((member name '("up" "C-p")) (set! top (help-scroll top -1 lines rows)) #t)
-                       ((member name '("PgDn" "C-v")) (set! top (help-scroll top (max 1 (- rows 2)) lines rows)) #t)
-                       ((member name '("PgUp" "esc v" "esc V")) (set! top (help-scroll top (- (max 1 (- rows 2))) lines rows)) #t)
-                       ;; C-h b is the Emacs way to this page: stay
-                       ((and (string=? name "b") (= top 1)) #t)
-                       ((string=? name "C-c r") (set! action 'ask-claude) #f)
-                       ((string=? name "C-c g") (set! action 'ask-codex) #f)
-                       (else #f))))
-           (when continue (show-help-line top) (loop)))))
-     (lambda ()
-       ;; however we leave: the file again, the assistants' windows closed
-       (set! *help-in-progress* #f)
-       (select-buffer origin)
-       (goto-char opoint)
-       (close-assistant-windows)
-       (when (string=? (get-buffer-name) *help-buffer*) (select-buffer from))
-       (kill-buffer *help-buffer*)
-       (clear-message-line)))
-    (when action (run-mode-line-action action))
-    #t))
+  "The keys, on a read-only page of their own; i or [CLOSE] closes it."
+  (if (help-page-p)
+      (message "This is the help page: i or [CLOSE] closes it")
+      (let ((origin (get-buffer-name)) (opoint (point)))
+        (set! *help-origin* (cons origin opoint))
+        (select-buffer *help-buffer*)
+        (set-buffer-read-only! #f)
+        (erase-buffer)
+        (insert (help-text))
+        (goto-char 0)
+        (fe-set-modified 0)
+        (enter-normal-mode 'read)
+        (message "Help: j k, gg G, / move; press i or click [CLOSE] to return to " origin)
+        #t)))
 
-(set-buffer-hint *help-buffer* "arrows scroll; other keys: back")
+(set-buffer-hint *help-buffer* "i closes help | j k gg G / % move")
 
 (global-set-key "C-h" 'help)
 (global-set-key "F1" 'help)

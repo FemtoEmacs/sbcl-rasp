@@ -222,10 +222,12 @@
 (define (km-sample-lines)
   (let ((span (form-at *km-sample* 30)))
     (km-drawing (read-sketch-form (string.sub *km-sample* (car span) (cdr span))))))
-(check "C-c p finds the plot table around the cursor, or the next one"
-       (list (car (form-at *km-sample* 40)) (car (form-at *km-sample* 0))
-             (form-at *km-sample* (- (length *km-sample*) 2)))
-       '(13 13 #f))
+(check "C-c p finds the plot table only with the cursor in it"
+       (let ((end (sexp-end *km-sample* 13)))
+         (list (car (form-at *km-sample* 13)) (car (form-at *km-sample* 40)) (car (form-at *km-sample* end))
+               (form-at *km-sample* 0) (form-at *km-sample* 5) (form-at *km-sample* (+ end 2))
+               (form-at *km-sample* (- (length *km-sample*) 2))))
+       '(13 13 13 #f #f #f #f))
 (check "Kaplan-Meier steps become horizontal and vertical segments"
        (filter (lambda (l) (string-prefix? "seg" l)) (km-sample-lines))
        '("seg 0 0.0 1.0 2.0 1.0" "seg 0 2.0 1.0 2.0 0.9" "seg 0 2.0 0.9 5.0 0.9"
@@ -238,6 +240,18 @@
 (check "A drop that does not start where the curve was is reported, not repaired"
        (and (find (lambda (l) (string-search "the drop starts at 0.8, but the curve was at 0.9" l)) (km-sample-lines)) #t)
        #t)
+(define *km-landmarks* "(estimator-plot :axes (:x (:limits (0 24)) :y (:limits (0 1)))\n  :cohorts ((:id a :label \"A\") (:id b :label \"B\"))\n  :curves ((:cohort (a b) :steps ((:kind :start :time 0 :survival 1.0) (:kind :landmark :time 6 :survival 0.8)))\n    (:cohort a :steps ((:kind :landmark :time 12 :survival 0.7) (:kind :end :time 18 :survival 0.6)))\n    (:cohort a :steps ((:kind :landmark :time 20 :survival 0.55))))\n  :statistics ((:kind :median :cohort a :value 15 :unit month) (:kind :median :cohort b :value :not-reached)\n    (:kind :p-value :comparison \"A vs B\" :value \"< .001\") (:kind :p-value :value \".2\")))")
+(define (km-landmark-lines) (km-drawing (read-sketch-form *km-landmarks*)))
+(check "Sampled landmarks are dots joined by dotted links, never steps"
+       (filter (lambda (l) (member (car (string-split l " ")) '("seg" "link" "point"))) (km-landmark-lines))
+       '("link 2 0.0 1.0 6.0 0.8" "point 2 6.0 0.8"
+         "link 0 12.0 0.7 18.0 0.6" "point 0 12.0 0.7" "point 0 18.0 0.6" "point 0 20.0 0.55"))
+(check "A trace shared by cohorts is labelled with all of them; a cohort is listed once"
+       (filter (lambda (l) (string-prefix? "series" l)) (km-landmark-lines))
+       '("series 2 60 60 60 0 A / B (overlapping)" "series 0 31 119 180 0 A"))
+(check "Statistics given as rows: medians and p-values in words"
+       (filter (lambda (l) (string-prefix? "stat" l)) (km-landmark-lines))
+       '("stat Median, A: 15 month" "stat Median, B: not reached" "stat p < .001 (A vs B)" "stat p = .2"))
 (check "Without a display the plot is a character sketch with a legend"
        (let ((s (text-plot (km-sample-lines))))
          (list (and (string-search "A = Arm A" s) #t) (and (string-search "Months" s) #t)))

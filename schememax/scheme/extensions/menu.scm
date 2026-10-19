@@ -151,6 +151,8 @@ the width.  The encoded pieces, or #f for the C core's own mode line."
                 (body (filter (lambda (b) (not (equal? (car b) "QUIT"))) buttons))
                 (prefix (string-append (shorten-left name (min *mode-line-name-maximum* (max 1 (string-length name))))
                                        (if (= 2 (logand flags 2)) "*" "")
+                                       (if (= 16 (logand flags 16)) "%%" "")
+                                       (if (bound? 'vim-tag) (vim-tag bname) "")
                                        ", L. " (number->string line) " "))
                 (reserve (if quit 9 0)))
            ;; keep the controls ahead of the file name when space is scarce

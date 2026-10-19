@@ -335,6 +335,7 @@ void fe_delete_region(long start, long end)
 	long size = document_size(curbp);
 	long len;
 
+	if (read_only_refuses()) return;
 	if (start < 0) start = 0;
 	if (end > size) end = size;
 	if (end <= start) return;
@@ -354,6 +355,7 @@ void fe_insert_bytes(long p, char *bytes, long len)
 {
 	long size = document_size(curbp);
 
+	if (read_only_refuses()) return;
 	if (len <= 0) return;
 	if (p < 0) p = 0;
 	if (p > size) p = size;
@@ -441,6 +443,8 @@ int   fe_buffer_count(void)          { return count_buffers(); }
 char *fe_buffer_name(void)           { return get_current_bufname(); }
 char *fe_buffer_filename(void)       { return curbp->b_fname; }
 int   fe_buffer_modified(void)       { return (curbp->b_flags & B_MODIFIED) != 0; }
+int   fe_buffer_read_only(void)      { return (curbp->b_flags & B_READONLY) != 0; }
+void  fe_set_read_only(int on)       { if (on) add_mode(curbp, B_READONLY); else delete_mode(curbp, B_READONLY); }
 int   fe_select_buffer(char *name)   { return select_buffer(name); }
 int   fe_kill_buffer(char *name)     { return delete_buffer_byname(name); }
 int   fe_save_buffer(char *name)     { return save_buffer_byname(name); }

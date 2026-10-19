@@ -1,5 +1,49 @@
 #Femto Emacs Change Log
 
+## 2026-10-18 — Read-only and vim mode, with nvim's normal-mode keys
+
+* M-x read-only (also M-x read-mode, M-x read-only-mode, C-x C-q): the
+  buffer is read-only and the keys are nvim's motions and copies (h j k l,
+  w b e, 0 ^ $, gg G, Enter, C-d C-u, / ? n N, yy, y{motion}, v ... y).
+  Keys that would edit say so.
+* M-x vim-mode: the same, plus dd, d{motion}, x, p, P, u, C-r, v ... d, o,
+  O, a, A, I.  Counts repeat (3dd, 5j).  Each edit is one undo step.
+* vim-mode also has . (repeat the last change; a count replaces its count),
+  J (join lines), r{char} (replace) and :w, :wq, :x, :q, :NUMBER.  Esc is
+  still Meta, as in Emacs: C-g cancels.
+* % jumps to the matching paren, bracket or brace, in both modes (d% and
+  y% too); off the line's brackets, it takes the first one after the
+  cursor, as vim does.
+* The help page (C-h) is read-only: every motion key works on it (j k,
+  gg G, C-d C-u, / n, % ...), nothing edits it, and i or [CLOSE] returns
+  to the page that asked for help, where the cursor was.  The mode line
+  says "i closes help".  C-c r and C-c g close it and ask about that page.
+* i returns to Emacs from both.  The mode line shows %% and READ, NORMAL
+  or VISUAL; the help page lists the keys.
+* core.scm: *modal-key-handler* sees every key first (a mode that owns the
+  keyboard, such as these).
+
+## 2026-10-18 — Read-only mode; C-c p draws sampled curves
+
+* M-x read-only (also M-x read-only-mode, C-x C-q) toggles read-only mode
+  for the buffer.  The C core refuses every change in such a buffer, typed
+  or made by a script (insert, delete, kill, yank, replace, undo,
+  insert-file); moving, searching, copying, C-c p and saving still work.
+  The mode line shows %% after the file name.
+* C-c p now draws tables recorded as sampled landmarks (:landmark rows),
+  as in hardy-2025-wo.md: dots joined by dotted lines, because the shape
+  between them is unknown.  Before, those curves came out flat at 1.
+* A trace shared by several cohorts ((:cohort (p1 p2 p3)), where curves
+  overlap) is drawn in dark grey and named after all of them; a cohort
+  with several curve records is listed once.  Statistics given as rows
+  (:kind :median / :p-value) are shown in words.
+* A paren whose match is off the screen (a long plot table, a long
+  definition) now says where the match is, as Emacs does:
+  "Matches line 383:   :omissions nil)".
+* C-c p and M-x plot-save act only with the cursor in a plot table (on
+  its opening paren, inside it, or just after its closing paren).  Before,
+  they drew the next table below the cursor from anywhere in the file.
+
 ## 2026-10-18 — C-c p: plots back from their tables
 
 * C-c p (M-x plot-at-point, also M-x irene-dixe) draws the Kaplan-Meier

@@ -259,9 +259,18 @@ void forward_word()
 		++curbp->b_point;
 }
 
+/* A read-only buffer refuses every change: say so, and return 1. */
+int read_only_refuses(void)
+{
+	if (curbp == NULL || !(curbp->b_flags & B_READONLY)) return 0;
+	msg("Buffer is read-only (M-x read-only or C-x C-q to edit)");
+	return 1;
+}
+
 /* standard insert at the keyboard */
 void insert()
 {
+	if (read_only_refuses()) return;
 	char_t the_char[2]; /* the inserted char plus a null */
 	assert(curbp->b_gap <= curbp->b_egap);
 
@@ -293,6 +302,7 @@ void backsp()
 	char_t the_char[7]; /* the deleted char, allow 6 unsigned chars plus a null */
 	int n = prev_utf8_char_size();
 
+	if (read_only_refuses()) return;
 	curbp->b_point = movegap(curbp, curbp->b_point);
 	undoset();
 
@@ -315,6 +325,7 @@ void delete()
 	char_t the_char[7]; /* the deleted char, allow 6 unsigned chars plus a null */
 	int n;
 
+	if (read_only_refuses()) return;
 	curbp->b_point = movegap(curbp, curbp->b_point);
 	undoset();
 	n = utf8_size(*(ptr(curbp, curbp->b_point)));
@@ -356,6 +367,7 @@ void goto_line(int line)
 
 void insertfile()
 {
+	if (read_only_refuses()) return;
 	if (getfilename(str_insert_file, (char*) response_buf, NAME_MAX))
 		(void)insert_file(response_buf, TRUE);
 }
@@ -524,6 +536,7 @@ void cut() {
 void copy_cut(int cut)
 {
 	char_t *p;
+	if (cut && read_only_refuses()) return;
 	/* if no mark or point == marker, nothing doing */
 	if (curbp->b_mark == NOMARK || curbp->b_point == curbp->b_mark)
 		return;
@@ -592,6 +605,7 @@ void insert_string(char *str)
 {
 	int len = (str == NULL) ? 0 : strlen(str);
 
+	if (read_only_refuses()) return;
 	if (curbp->b_flags & B_OVERWRITE)
 		return;
 	if (len <= 0) {
@@ -732,6 +746,8 @@ static int opening_of(char c, char *close)
 	return 0;
 }
 
+void announce_offscreen_match(buffer_t *bp);
+
 void match_parens()
 {
 	assert(curwp != NULL);
@@ -760,6 +776,47 @@ void match_parens()
 	}
 	if (bp->b_paren == NOPAREN)
 		bp->b_paren_at = NOPAREN;
+	announce_offscreen_match(bp);
+}
+
+/*
+ * A table or a definition can be longer than the window: then its matching
+ * paren is off the screen and its highlight cannot be seen.  Say where it
+ * is, as Emacs does, once each time the cursor arrives at the paren:
+ *   Matches line 389:   :rows ((:cohort a :counts (20 12 5)))))
+ */
+void announce_offscreen_match(buffer_t *bp)
+{
+	static buffer_t *last_bp = NULL;
+	static point_t last_at = NOPAREN;
+	char line[80];
+	point_t start, end, size = document_size(bp);
+	int n = 0;
+
+	if (bp->b_paren == NOPAREN) { last_at = NOPAREN; return; }
+	if (bp == last_bp && bp->b_paren_at == last_at) return;
+	last_bp = bp;
+	last_at = bp->b_paren_at;
+	/* the page is the last one drawn, so judge by distance too: a match
+	 * a window's height away cannot be on the screen */
+	{
+		int lines = line_number(bp, bp->b_paren) - line_number(bp, bp->b_point);
+		int rows = curwp != NULL ? curwp->w_rows : 20;
+		if (lines < 0) lines = -lines;
+		if (lines < rows - 1 && bp->b_paren >= bp->b_page && bp->b_paren < bp->b_epage) return;
+		if (lines < 2) return;
+	}
+
+	/* the matching paren's line, trimmed to fit the message line */
+	start = lnstart(bp, bp->b_paren);
+	end = bp->b_paren + 1;
+	while (end < size && *ptr(bp, end) != '\n' && end - start < 200) end++;
+	if (end - start > 60) {
+		if (bp->b_paren - start > 50) start = bp->b_paren - 50;
+	}
+	while (start < end && n < (int) sizeof(line) - 1) line[n++] = (char) *ptr(bp, start++);
+	line[n] = '\0';
+	msg("Matches line %d: %s", line_number(bp, bp->b_paren), line);
 }
 
 void match_paren_forwards(buffer_t *bp, char open_paren, char close_paren)

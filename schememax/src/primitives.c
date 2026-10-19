@@ -30,6 +30,8 @@ extern void fe_add_command_name(char *name);
 extern void fe_set_buffer_hint(char *name, char *hint);
 extern void fe_set_modeline_hints(char *help, char *tail);
 extern void editor_mouse_event(void);
+extern int fe_buffer_read_only(void);
+extern void fe_set_read_only(int on);
 
 static value_t bytes_string(const char *data, size_t len)
 {
@@ -312,6 +314,21 @@ static value_t spawn_program(value_t *a, uint32_t n)
 	return FL_T;
 }
 
+/* (buffer-read-only?) and (set-buffer-read-only! flag): the current buffer */
+static value_t buffer_read_only(value_t *a, uint32_t n)
+{
+	(void) a;
+	argcount("buffer-read-only?", n, 0);
+	return fe_buffer_read_only() ? FL_T : FL_F;
+}
+
+static value_t set_buffer_read_only(value_t *a, uint32_t n)
+{
+	argcount("set-buffer-read-only!", n, 1);
+	fe_set_read_only(a[0] != FL_F);
+	return a[0] != FL_F ? FL_T : FL_F;
+}
+
 /* (os-name): "darwin", "linux", ... (uname, lower case) */
 static value_t os_name(value_t *a, uint32_t n)
 {
@@ -353,6 +370,8 @@ void primitives_init(void)
 		{ "run-program", run_program },
 		{ "spawn-program", spawn_program },
 		{ "os-name", os_name },
+		{ "buffer-read-only?", buffer_read_only },
+		{ "set-buffer-read-only!", set_buffer_read_only },
 		{ "getpid", get_pid },
 		{ NULL, NULL }
 	};

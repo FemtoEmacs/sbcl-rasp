@@ -385,7 +385,18 @@ on the kill ring and make it what C-y inserts."
                     (value->string (car r))
                     (concat printed " => " (value->string (car r))))))))
 
+;; A modal key handler (the vim-like normal mode of read-only.scm) sees
+;; every key first; it returns true when it took the key.
+(defvar *modal-key-handler* #f)
+
+(define (modal-key? kind key)
+  (and *modal-key-handler*
+       ((command-procedure *modal-key-handler*) kind key)))
+
 (define (event-key arg)
+  (if (modal-key? 'key arg) #t (event-key-normally arg)))
+
+(define (event-key-normally arg)
   (command-boundary arg)
   (let ((fn (get *keymap* arg #f)))
     (set! *this-key* arg)
@@ -413,6 +424,9 @@ on the kill ring and make it what C-y inserts."
            #t))))
 
 (define (event-self-insert arg)
+  (if (modal-key? 'char arg) #t (event-self-insert-normally arg)))
+
+(define (event-self-insert-normally arg)
   (command-boundary #t)
   (set! *last-key* "self-insert")
   (set! *last-command* 'self-insert)

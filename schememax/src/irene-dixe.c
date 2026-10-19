@@ -11,6 +11,8 @@
  *   xaxis LO HI LABEL / xticks T... / yaxis LO HI LABEL / yticks T...
  *   series I R G B DASHED LABEL      a curve and its legend entry
  *   seg I X1 Y1 X2 Y2                a horizontal or vertical step segment
+ *   link I X1 Y1 X2 Y2               a dotted join between sampled landmarks
+ *   point I X Y                      a sampled landmark (a dot)
  *   censor I X Y                     a censor tick
  *   gap I X1 X2 REASON               an unresolved interval (shaded)
  *   risktimes T... / risk I N...     numbers at risk under the plot
@@ -22,6 +24,7 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,8 +45,9 @@ static double xlo = 0, xhi = 1, ylo = 0, yhi = 1;
 static double xticks[MAX_TICKS], yticks[MAX_TICKS], risktimes[MAX_TICKS];
 static int nxticks, nyticks, nrisktimes;
 static series_t series[MAX_SERIES];
-static seg_t segs[MAX_ITEMS];
-static point_t censors[MAX_ITEMS];
+static seg_t segs[MAX_ITEMS], links[MAX_ITEMS];
+static point_t censors[MAX_ITEMS], points[MAX_ITEMS];
+static int nlinks, npoints;
 static gap_t gaps[MAX_SERIES * 4];
 static int nsegs, ncensors, ngaps;
 static char risk[MAX_SERIES][TEXT_LEN];
@@ -117,6 +121,12 @@ static int read_sketch(const char *path)
 		} else if (!strcmp(tag, "seg") && nsegs < MAX_ITEMS && read_numbers(rest, v, 5) == 5) {
 			seg_t s = { (int) v[0], v[1], v[2], v[3], v[4] };
 			segs[nsegs++] = s;
+		} else if (!strcmp(tag, "link") && nlinks < MAX_ITEMS && read_numbers(rest, v, 5) == 5) {
+			seg_t s = { (int) v[0], v[1], v[2], v[3], v[4] };
+			links[nlinks++] = s;
+		} else if (!strcmp(tag, "point") && npoints < MAX_ITEMS && read_numbers(rest, v, 3) == 3) {
+			point_t p = { (int) v[0], v[1], v[2] };
+			points[npoints++] = p;
 		} else if (!strcmp(tag, "censor") && ncensors < MAX_ITEMS && read_numbers(rest, v, 3) == 3) {
 			point_t p = { (int) v[0], v[1], v[2] };
 			censors[ncensors++] = p;
@@ -234,6 +244,27 @@ static void thick_segment(SDL_Renderer *r, int x1, int y1, int x2, int y2, int w
 	}
 }
 
+/* A dotted line in any direction: square dots of side W every 3W pixels.
+ * Between sampled landmarks the curve's shape is unknown; the dots say so. */
+static void dotted_line(SDL_Renderer *r, int x1, int y1, int x2, int y2, int w)
+{
+	double dx = x2 - x1, dy = y2 - y1, len = sqrt(dx * dx + dy * dy);
+	int n = (int) (len / (3.0 * w));
+	for (int k = 0; k <= n; k++) {
+		double t = n ? (double) k / n : 0;
+		SDL_Rect d = { (int) (x1 + t * dx) - w / 2, (int) (y1 + t * dy) - w / 2, w, w };
+		SDL_RenderFillRect(r, &d);
+	}
+}
+
+static void dot(SDL_Renderer *r, int x, int y, int radius)
+{
+	for (int j = -radius; j <= radius; j++) {
+		int half = (int) sqrt((double) (radius * radius - j * j));
+		SDL_RenderDrawLine(r, x - half, y + j, x + half, y + j);
+	}
+}
+
 static void draw(SDL_Renderer *r, int W, int H)
 {
 	SDL_Color ink = { 30, 30, 30, 255 }, grey = { 110, 110, 110, 255 };
@@ -306,6 +337,17 @@ static void draw(SDL_Renderer *r, int W, int H)
 		thick_segment(r, px(f, segs[i].x1), py(f, segs[i].y1), px(f, segs[i].x2), py(f, segs[i].y2),
 			      S(2) > 1 ? S(2) : 2, s->dashed);
 	}
+	for (i = 0; i < nlinks; i++) {
+		series_t *s = &series[links[i].series % MAX_SERIES];
+		SDL_SetRenderDrawColor(r, s->r, s->g, s->b, 255);
+		dotted_line(r, px(f, links[i].x1), py(f, links[i].y1), px(f, links[i].x2), py(f, links[i].y2),
+			    S(2) > 1 ? S(2) : 2);
+	}
+	for (i = 0; i < npoints; i++) {
+		series_t *s = &series[points[i].series % MAX_SERIES];
+		SDL_SetRenderDrawColor(r, s->r, s->g, s->b, 255);
+		dot(r, px(f, points[i].x), py(f, points[i].y), S(4) > 3 ? S(4) : 3);
+	}
 	for (i = 0; i < ncensors; i++) {
 		series_t *s = &series[censors[i].series % MAX_SERIES];
 		int x = px(f, censors[i].x), y = py(f, censors[i].y);
@@ -344,6 +386,13 @@ static void draw(SDL_Renderer *r, int W, int H)
 		SDL_SetRenderDrawColor(r, series[i].r, series[i].g, series[i].b, 255);
 		thick_segment(r, lx, ly + line_h / 2, lx + S(22), ly + line_h / 2, S(3) > 2 ? S(3) : 3, series[i].dashed);
 		text(r, font, series[i].label, lx + S(30), ly, 0, ink);
+		ly += line_h + S(4);
+	}
+	if (npoints) {
+		SDL_SetRenderDrawColor(r, 60, 60, 60, 255);
+		dotted_line(r, lx, ly + line_h / 2, lx + S(22), ly + line_h / 2, S(2) > 1 ? S(2) : 2);
+		dot(r, lx + S(11), ly + line_h / 2, S(4) > 3 ? S(4) : 3);
+		text(r, font, "sampled point", lx + S(30), ly, 0, ink);
 		ly += line_h + S(4);
 	}
 	if (ncensors) {

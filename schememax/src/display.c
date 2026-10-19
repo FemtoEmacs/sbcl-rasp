@@ -666,7 +666,8 @@ void modeline(window_t *wp)
 	face_on(ID_COLOR_MODELINE);
 	screen_move(wp->w_top + wp->w_rows, 0);
 	lch = (wp == curwp ? '=' : '-');
-	mch = ((wp->w_bufp->b_flags & B_MODIFIED) && !(wp->w_bufp->b_flags & B_SPECIAL) ? '*' : lch);
+	mch = (wp->w_bufp->b_flags & B_READONLY) ? '%' :
+	      ((wp->w_bufp->b_flags & B_MODIFIED) && !(wp->w_bufp->b_flags & B_SPECIAL) ? '*' : lch);
 	och = ((wp->w_bufp->b_flags & B_OVERWRITE) ? 'O' : lch);
 
 	/*
@@ -682,7 +683,8 @@ void modeline(window_t *wp)
 		int flags = (wp == curwp ? 1 : 0)
 			| ((wp->w_bufp->b_flags & B_MODIFIED) ? 2 : 0)
 			| ((wp->w_bufp->b_flags & B_OVERWRITE) ? 4 : 0)
-			| ((wp->w_bufp->b_flags & B_SPECIAL) ? 8 : 0);
+			| ((wp->w_bufp->b_flags & B_SPECIAL) ? 8 : 0)
+			| ((wp->w_bufp->b_flags & B_READONLY) ? 16 : 0);
 
 		if (modeline_hook != NULL &&
 		    modeline_hook(name, wp->w_bufp->b_fname, wp->w_bufp->b_bname,

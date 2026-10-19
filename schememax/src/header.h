@@ -92,6 +92,7 @@ typedef enum {
 	B_OVERWRITE = 0x02,		/* overwite mode */
 	B_SPECIAL = 0x04,		/* is a special buffer name of form '*name*' */
 	B_UNDO = 0x08,                  /* undo mode */
+	B_READONLY = 0x10,              /* read-only: M-x read-only, C-x C-q */
 } buffer_flags_t;
 
 typedef struct string_list_t
@@ -361,6 +362,7 @@ extern void w2b(window_t *);
 extern void b2w(window_t *);
 extern void b2w_all_windows(buffer_t *);
 extern void mark_all_windows(void);
+extern int read_only_refuses(void);
 extern void associate_b2w(buffer_t *, window_t *);
 extern void disassociate_b(window_t *);
 extern void hijack_window(window_t *, buffer_t *);

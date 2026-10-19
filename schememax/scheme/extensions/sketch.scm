@@ -100,18 +100,14 @@ and ; comments are skipped."
         <))
 
 (define (form-at text pos)
-  "(start . end) of the form around POS, or else the first one after it."
-  (let loop ((starts (form-starts text)) (before #f))
-    (cond ((null? starts)
-           (and before (let ((end (sexp-end text before)))
-                         (and end (<= pos end) (cons before end)))))
-          ((<= (car starts) pos) (loop (cdr starts) (car starts)))
-          (else
-           (let ((end (and before (sexp-end text before))))
-             (if (and end (<= pos end))
-                 (cons before end)
-                 (let ((next-end (sexp-end text (car starts))))
-                   (and next-end (cons (car starts) next-end)))))))))
+  "(start . end) of the table the cursor is in: on its opening paren,
+anywhere inside it, or just after its closing paren.  #f elsewhere, so C-c p
+outside a table draws nothing."
+  (let loop ((starts (form-starts text)) (found #f))
+    (if (or (null? starts) (> (car starts) pos))
+        found
+        (let ((end (sexp-end text (car starts))))
+          (loop (cdr starts) (if (and end (<= pos end)) (cons (car starts) end) found))))))
 
 (define (read-sketch-form text)
   "The table in TEXT as data, after the safety check."
@@ -161,37 +157,69 @@ palette colour by INDEX."
     (list (if (string? label) label (->string label)) lo hi
           (if (and (pair? ticks) (number? (car ticks))) ticks (nice-ticks lo hi)))))
 
+;; A table records a curve in one of two ways (ttfy/plots-guidelines.md):
+;;   every visible step:   :start, then :drop rows (time, from, to), :end
+;;   sampled landmarks:    :start, :landmark rows (time, survival), :end
+;; Steps are drawn as the staircase they are.  Between landmarks the shape
+;; is not known, so they are joined by a thin dotted line and each one gets
+;; a dot: the picture must not claim more than the table holds.
 (define (curve-segments curve tolerance)
-  "Two values as a list: the segments ((x1 y1 x2 y2 dashed?) ...) of CURVE's
-steps, and the notes about levels that do not join."
-  (let loop ((steps (plist-list (pget curve ':steps '()))) (prev #f) (segs '()) (notes '()))
-    (if (null? steps) (list (reverse segs) (reverse notes))
+  "(segments notes points): segments are (x1 y1 x2 y2 kind), kind step or
+link (dotted, between sampled landmarks); points are the landmarks (x y)."
+  (let loop ((steps (plist-list (pget curve ':steps '())))
+             (prev #f) (mode 'step) (segs '()) (notes '()) (points '()))
+    (if (null? steps) (list (reverse segs) (reverse notes) (reverse points))
         (let* ((row (car steps))
                (kind (pget row ':kind #f))
-               (t (pget row ':time #f)))
+               (t (pget row ':time #f))
+               (sv (pget row ':survival #f)))
           (cond ((not (number? t))
-                 (loop (cdr steps) prev segs (cons "a row without a numeric :time was skipped" notes)))
+                 (loop (cdr steps) prev mode segs (cons "a row without a numeric :time was skipped" notes) points))
                 ((eq? kind ':start)
-                 (loop (cdr steps) (list t (sketch-number (pget row ':survival #f) ":survival")) segs notes))
-                ((not prev)
-                 (loop (cdr steps) prev segs (cons (concat "a row at time " (fmt-num t) " comes before :start") notes)))
+                 (loop (cdr steps) (list t (sketch-number sv ":survival")) 'step segs notes points))
                 ((eq? kind ':drop)
                  (let* ((from (sketch-number (pget row ':from #f) ":from"))
-                        (to (sketch-number (pget row ':to #f) ":to"))
-                        (px (car prev)) (py (cadr prev))
-                        (notes (if (> (abs (- from py)) tolerance)
-                                   (cons (concat "at time " (fmt-num t) " the drop starts at " (fmt-num from)
-                                                 ", but the curve was at " (fmt-num py))
-                                         notes)
-                                   notes)))
-                   (loop (cdr steps) (list t to)
-                         (cons (list t from t to) (cons (list px py t py) segs))
-                         notes)))
+                        (to (sketch-number (pget row ':to #f) ":to")))
+                   (if (not prev)
+                       ;; a curve that starts with a drop: begin at its top
+                       (loop (cdr steps) (list t to) 'step (cons (list t from t to 'step) segs) notes points)
+                       (let* ((px (car prev)) (py (cadr prev))
+                              (notes (if (> (abs (- from py)) tolerance)
+                                         (cons (concat "at time " (fmt-num t) " the drop starts at " (fmt-num from)
+                                                       ", but the curve was at " (fmt-num py))
+                                               notes)
+                                         notes))
+                              (lead (if (eq? mode 'link) (list px py t from 'link) (list px py t py 'step))))
+                         (loop (cdr steps) (list t to) 'step
+                               (cons (list t from t to 'step) (cons lead segs))
+                               notes points)))))
                 ((eq? kind ':end)
-                 (let ((px (car prev)) (py (cadr prev)))
-                   (loop (cdr steps) (list t py) (cons (list px py t py) segs) notes)))
+                 (cond ((not prev)
+                        (if (number? sv)
+                            (loop (cdr steps) (list t sv) mode segs notes (cons (list t sv) points))
+                            (loop (cdr steps) prev mode segs notes points)))
+                       ((eq? mode 'link)
+                        (let ((y (if (number? sv) sv (cadr prev))))
+                          (loop (cdr steps) (list t y) mode
+                                (cons (list (car prev) (cadr prev) t y 'link) segs) notes (cons (list t y) points))))
+                       (else
+                        (let ((px (car prev)) (py (cadr prev)))
+                          (loop (cdr steps) (list t py) mode (cons (list px py t py 'step) segs)
+                                (if (and (number? sv) (> (abs (- sv py)) tolerance))
+                                    (cons (concat "the end row at time " (fmt-num t) " says " (fmt-num sv)
+                                                  ", but the curve was at " (fmt-num py))
+                                          notes)
+                                    notes)
+                                points)))))
+                ((number? sv)
+                 ;; :landmark, or an unknown kind that still gives a point
+                 (let ((notes (if (eq? kind ':landmark) notes
+                                  (cons (concat "row kind " (->string kind) " drawn as a sampled point") notes))))
+                   (loop (cdr steps) (list t sv) 'link
+                         (if prev (cons (list (car prev) (cadr prev) t sv 'link) segs) segs)
+                         notes (cons (list t sv) points))))
                 (else
-                 (loop (cdr steps) prev segs (cons (concat "unknown row kind " (->string kind)) notes))))))))
+                 (loop (cdr steps) prev mode segs (cons (concat "unknown row kind " (->string kind)) notes) points)))))))
 
 (define (curve-gaps curve)
   "The unresolved intervals of the CURVE itself (not those about censor marks)."
@@ -208,9 +236,36 @@ steps, and the notes about levels that do not join."
          (t (string-join (string-split t "\r") " ")))
     (if (> (length t) 200) (string.sub t 0 200) t)))
 
+(define (statistic-row-line row name)
+  "One printed statistic given as its own row, (:kind :median ...) and the like."
+  (let* ((kind (pget row ':kind #f))
+         (v (pget row ':value #f))
+         (vt (cond ((number? v) (fmt-num v))
+                   ((eq? v ':not-reached) "not reached")
+                   ((string? v) v)
+                   (v (->string v))
+                   (else "")))
+         (ci (pget row ':ci #f))
+         (who (cond ((pget row ':cohort #f) (name (pget row ':cohort)))
+                    ((string? (pget row ':comparison #f)) (pget row ':comparison))
+                    (else ""))))
+    (cond ((eq? kind ':median)
+           (concat "Median, " who ": " vt (if (and (number? v) (pget row ':unit #f)) (concat " " (->string (pget row ':unit))) "")))
+          ((eq? kind ':p-value)
+           (concat "p " (if (and (> (length vt) 0) (memv (aref vt 0) '(60 62 61))) vt (concat "= " vt))
+                   (if (> (length who) 0) (concat " (" who ")") "")))
+          (else
+           (concat (if kind (let ((k (->string kind))) (if (string-prefix? ":" k) (string.sub k 1 (length k)) k)) "value")
+                   (if (> (length who) 0) (concat ", " who) "") ": " vt
+                   (if (pair? ci) (concat " (CI " (fmt-num (car ci)) "-" (fmt-num (cadr ci)) ")") ""))))))
+
 (define (statistics-lines stats labels)
-  "Short readable lines for the printed statistics."
+  "Short readable lines for the printed statistics: either a plist with
+:rows and :comparison, or a list of rows each with its :kind."
   (if (not (pair? stats)) '()
+   (if (pair? (car stats))
+      (let ((name (lambda (id) (let ((e (assq id labels))) (if e (cdr e) (->string id))))))
+        (map (lambda (row) (statistic-row-line row name)) (filter pair? stats)))
       (let ((name (lambda (id) (let ((e (assq id labels))) (if e (cdr e) (->string id))))))
         (append
          (map (lambda (row)
@@ -228,7 +283,7 @@ steps, and the notes about levels that do not join."
                                " " (fmt-num (pget c ':estimate ""))
                                (if (pair? ci) (concat " (CI " (fmt-num (car ci)) "-" (fmt-num (cadr ci)) ")") "")
                                (if p (concat ", p " (->string p)) "")
-                               (if (pget c ':reference #f) (concat ", vs " (name (pget c ':reference))) ""))))))))))
+                               (if (pget c ':reference #f) (concat ", vs " (name (pget c ':reference))) "")))))))))))
 
 (define (km-drawing form)
   "The lines of the drawing file for an (estimator-plot ...) FORM."
@@ -258,20 +313,39 @@ steps, and the notes about levels that do not join."
     (emit "xticks " (string-join (map num-text (cadddr x)) " "))
     (emit "yaxis " (num-text (cadr y)) " " (num-text (caddr y)) " " (sketch-line (car y)))
     (emit "yticks " (string-join (map num-text (cadddr y)) " "))
-    (let loop ((cs curves) (i 0))
+    ;; One series per cohort: a cohort may have several curve records (a
+    ;; trace split by an overlap), drawn in the same colour, listed once.
+    (define (series-index id k)
+      (or (list-index (lambda (c) (eq? (pget c ':id #f) id)) cohorts)
+          (+ (length cohorts) k)))
+    (define listed '())
+    (let loop ((cs curves) (k 0))
       (when (pair? cs)
         (let* ((curve (car cs))
                (id (pget curve ':cohort #f))
+               (i (series-index id k))
                (cohort (or (find (lambda (c) (eq? (pget c ':id #f) id)) cohorts) '()))
-               (rgb (series-color (pget cohort ':style '()) i))
-               (label (let ((e (assq id labels))) (if e (cdr e) (->string (or id (concat "curve " (+ i 1)))))))
+               ;; (:cohort (p1 p2 p3)): a trace the cohorts share where they overlap
+               (shared (pair? id))
+               (rgb (if shared '(60 60 60) (series-color (pget cohort ':style '()) i)))
+               (label (cond (shared
+                             (concat (string-join (map (lambda (m) (let ((e (assq m labels))) (if e (cdr e) (->string m)))) id)
+                                                  " / ")
+                                     " (overlapping)"))
+                            ((assq id labels) => cdr)
+                            (else (->string (or id (concat "curve " (+ k 1)))))))
                (dashed (eq? (pget (plist-list (pget cohort ':style '())) ':line #f) ':dashed))
                (tol (let ((v (pget curve ':survival-tolerance #f))) (if (number? v) (max v ytol) ytol)))
                (result (curve-segments curve tol)))
-          (emit "series " i " " (car rgb) " " (cadr rgb) " " (caddr rgb) " " (if dashed 1 0) " " (sketch-line label))
-          (for-each (lambda (s) (emit "seg " i " " (num-text (car s)) " " (num-text (cadr s)) " "
+          (unless (memv i listed)
+            (set! listed (cons i listed))
+            (emit "series " i " " (car rgb) " " (cadr rgb) " " (caddr rgb) " " (if dashed 1 0) " " (sketch-line label)))
+          (for-each (lambda (s) (emit (if (eq? (list-ref s 4) 'link) "link " "seg ") i " "
+                                      (num-text (car s)) " " (num-text (cadr s)) " "
                                       (num-text (caddr s)) " " (num-text (cadddr s))))
                     (car result))
+          (for-each (lambda (p) (emit "point " i " " (num-text (car p)) " " (num-text (cadr p))))
+                    (caddr result))
           (for-each (lambda (c)
                       (when (and (number? (pget c ':time #f)) (number? (pget c ':survival #f)))
                         (emit "censor " i " " (num-text (pget c ':time)) " " (num-text (pget c ':survival)))))
@@ -279,12 +353,13 @@ steps, and the notes about levels that do not join."
           (for-each (lambda (g) (emit "gap " i " " (num-text (car g)) " " (num-text (cadr g)) " " (sketch-line (caddr g))))
                     (curve-gaps curve))
           (for-each (lambda (n) (emit "note " (sketch-line (concat label ": " n)))) (cadr result))
-          (loop (cdr cs) (+ i 1)))))
+          (loop (cdr cs) (+ k 1)))))
     (let ((risk (pget plist ':numbers-at-risk #f)))
       (when (and (pair? risk) (pair? (pget risk ':times #f)))
         (emit "risktimes " (string-join (map num-text (filter number? (pget risk ':times))) " "))
         (for-each (lambda (row)
-                    (let ((idx (list-index (lambda (c) (eq? (pget c ':cohort #f) (pget row ':cohort #f))) curves)))
+                    (let ((idx (and (find (lambda (c) (eq? (pget c ':cohort #f) (pget row ':cohort #f))) curves)
+                                    (series-index (pget row ':cohort #f) 0))))
                       (when idx
                         (emit "risk " idx " " (string-join (map (lambda (v) (if (number? v) (fmt-num v) "-"))
                                                                 (plist-list (pget row ':counts '())))
@@ -329,6 +404,14 @@ steps, and the notes about levels that do not join."
                 (if (= r1 r2)
                     (do ((c (min c1 c2) (+ c 1))) ((> c (max c1 c2))) (put r1 c ch))
                     (do ((k (min r1 r2) (+ k 1))) ((> k (max r1 r2))) (put k c1 ch)))))
+             ((string=? (car r) "link")      ; dotted join: lower-case letters
+              (let* ((v (record-numbers r 1)) (ch (char-downcase (mark (car v))))
+                     (c1 (col (cadr v))) (r1 (row (caddr v))) (c2 (col (cadddr v))) (r2 (row (car (cddddr v))))
+                     (n (max 1 (abs (- c2 c1)) (abs (- r2 r1)))))
+                (do ((k 0 (+ k 1))) ((> k n))
+                  (put (exact (round (+ r1 (* k (/ (- r2 r1) n))))) (exact (round (+ c1 (* k (/ (- c2 c1) n))))) ch))))
+             ((string=? (car r) "point")     ; a sampled landmark: its letter
+              (let ((v (record-numbers r 1))) (put (row (caddr v)) (col (cadr v)) (mark (car v)))))
              ((string=? (car r) "censor")
               (let ((v (record-numbers r 1))) (put (row (caddr v)) (col (cadr v)) #\+)))))
      recs)
@@ -364,7 +447,7 @@ steps, and the notes about levels that do not join."
       (string-join (append (list (string-join (cdr title) " ") "")
                            body (list axis xlabels
                                       (concat (make-spaces (+ label-width 1)) (string-join (cdddr xa) " "))
-                                      "" "Curves (+ = censored):")
+                                      "" "Curves (+ = censored; lower case = shape unknown between sampled points):")
                            legend
                            (if (pair? extra) (cons "" extra) '())
                            (list "" "A rough sketch: install irene-dixe (make) and use a display for the real plot."))
@@ -444,7 +527,7 @@ paper-plot-1.png, then -plot-2 ...), or in the home folder."
   (let* ((text (buffer-string))
          (span (form-at text (point))))
     (if (not span)
-        (begin (message "No plot table at the cursor (C-c p draws an (estimator-plot ...) table)") #f)
+        (begin (message "No plot table here: put the cursor inside an (estimator-plot ...) table") #f)
         (guard (e (#t (message (describe-error e)) #f))
           (let* ((form (read-sketch-form (string.sub text (car span) (cdr span))))
                  (head (and (pair? form) (car form))))

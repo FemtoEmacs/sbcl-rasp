@@ -152,6 +152,27 @@ do not join (a drop starting away from the current level) are listed under
 the legend for review, not repaired. `irene-dixe --render TABLE OUT.png`
 draws without a window. Sketches of diagnostic images will use C-c p too.
 
+Curves recorded as sampled landmarks (`:landmark` rows) are drawn as dots
+joined by dotted lines: the table does not say what the curve does between
+them.
+
+## Read-only and vim mode
+
+M-x read-only (or C-x C-q) makes the buffer read-only and turns the keys
+into nvim's normal-mode motions: h j k l (and the arrows), w b e, 0 ^ $,
+gg G, Enter, C-d C-u, / ? n N, % (the matching paren); yy and y{motion} copy, v selects (then y
+copies). Nothing can change the buffer, neither a key nor a script.
+
+M-x vim-mode adds the keys that edit: dd and d{motion} (dw, d$, dgg), x,
+p and P, u and C-r, v ... d, o and O; . repeats the last change, J joins
+lines, r{char} replaces a character, and :w saves (:wq or :x save and
+quit, :q quits, :42 goes to line 42). A count repeats (3dd, 5j, 3.).
+
+In both modes i returns to Emacs; the mode line shows `%%` and READ,
+NORMAL or VISUAL. C-g cancels a count, an operator or a selection. The
+help page (C-h) lists the keys; it is read-only itself, so the same
+motion keys move on it, and i (or [CLOSE]) closes it.
+
 ## Search
 
 C-s searches forward and C-r backward as you type; repeat them for the

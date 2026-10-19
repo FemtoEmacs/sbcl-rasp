@@ -15,6 +15,7 @@ void query_replace(void)
 	int ask = TRUE;
 	int c;
 
+	if (read_only_refuses()) return;
 	searchtext[0] = '\0';
 	replace[0] = '\0';
 
