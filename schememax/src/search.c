@@ -16,7 +16,24 @@ void search(void)
         if(c==0x07){
             curbp->b_point=origin;display(curwp,TRUE);msg("Search cancelled");return;
         }
-        if(c==0x0a || c==0x0d || c==0x1b){
+        if(c==0x0a || c==0x0d){
+            msg("Search %s",cpos ? "finished" : "closed");return;
+        }
+        if(c==0x1b){
+            /*
+             * Esc alone ends the search.  An arrow, Home, PgUp or a mouse
+             * click is Esc [ ... or Esc O ...: the search ends and the key
+             * is given back whole, so the arrow moves the cursor, as in
+             * Emacs.  Before, "[A" was left to be typed into the text.
+             */
+            int next=read_key_byte();
+            if(next=='[' || next=='O'){
+                char seq[2]={0x1b,(char)next};
+                unread_key_bytes(seq,2);
+            } else {
+                char key=(char)next;
+                unread_key_bytes(&key,1);
+            }
             msg("Search %s",cpos ? "finished" : "closed");return;
         }
         if(c==0x13 || c==0x12){
@@ -29,6 +46,12 @@ void search(void)
         } else if(c>=32 && cpos<STRBUF_M-1){
             searchtext[cpos++]=(char)c;searchtext[cpos]=0;
             curbp->b_point=origin;
+        } else if(c<32){
+            /* another control key (C-a, C-n, C-e ...): the search ends
+             * and the key does what it always does */
+            char key=(char)c;
+            unread_key_bytes(&key,1);
+            msg("Search %s",cpos ? "finished" : "closed");return;
         } else continue;
         prompt=direction==FWD_SEARCH ? "Search forward: " : "Search backward: ";
         point_t found=direction==FWD_SEARCH ? search_forward(searchtext) : search_backwards(searchtext);

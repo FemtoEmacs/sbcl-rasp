@@ -1,5 +1,24 @@
 #Femto Emacs Change Log
 
+## 2026-10-21 — vim mode pastes what other programs copied
+
+* read-only.scm: p and P pasted the newest kill made in Schememax, never
+  what another program (Grammarly, a browser) had copied since, so an older
+  text came out.  They now take the system clipboard first, as C-y does.
+  In vim mode C-y also pastes, at the cursor; before, the read-only buffer
+  underneath refused it silently, and so it refused Cmd-V in the window
+  (which sends C-y).  In read mode, C-y says that it would edit.
+
+## 2026-10-20 — A key that ends a search does its usual job
+
+* search.c: an arrow pressed during C-s (or C-r) ended the search on its
+  Esc, and the rest of the arrow, "[A", was typed into the text
+  ("Ishizuka[A's").  Now the search ends and the whole key is given back
+  (key.c, unread_key_bytes), so the arrow moves the cursor, as in Emacs.
+  The same holds for Home, End, PgUp, PgDn, a mouse click and control keys
+  (C-a, C-n, C-e ...).  Esc alone still just ends the search; RET ends it,
+  C-g cancels it.
+
 ## 2026-10-19 — An editable minibuffer; assistant buttons; all buffers sent
 
 * src/lineedit.c (new): the answer to every prompt is edited anywhere in

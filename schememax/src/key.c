@@ -225,10 +225,32 @@ static int macro_recording = 0;
 static int macro_play = -1;          /* next byte to play back, or -1 */
 static int macro_repeat = 0;         /* "e" right after C-x e repeats it */
 
+/*
+ * Bytes given back with unread_key_bytes: read again before anything
+ * else.  A prompt that ends because of a key it does not use (search ends
+ * at an arrow, say) gives the key back, and the editor runs it as usual.
+ */
+static char_t unread[16];
+static int nunread = 0;
+
+void unread_key_bytes(const char *s, int n)
+{
+	if (n <= 0 || nunread + n > (int) sizeof(unread)) return;
+	memmove(unread + n, unread, (size_t) nunread);   /* before what is there */
+	memcpy(unread, s, (size_t) n);
+	nunread += n;
+}
+
 int read_key_byte(void)
 {
 	int c;
 
+	if (nunread > 0) {              /* already recorded, if a macro is */
+		c = unread[0];
+		nunread--;
+		memmove(unread, unread + 1, (size_t) nunread);
+		return c;
+	}
 	if (macro_play >= 0) {
 		if (macro_play < macro_len)
 			return macro_buf[macro_play++];

@@ -18,7 +18,9 @@
 ;;;; M-x vim-mode: all of the above, and the keys that edit, each one
 ;;;; undoable on its own:
 ;;;;   x                delete the character   dd d{motion}  delete lines / span
-;;;;   p P              paste after / before (whole lines go below / above)
+;;;;   p P              paste after / before (whole lines go below / above);
+;;;;                    what another program copied since comes first.  C-y
+;;;;                    (Cmd-V in the window) pastes at the cursor
 ;;;;   u  C-r           undo / redo            v ... d   delete the selection
 ;;;;   o O              open a line below / above, then edit
 ;;;;   .                repeat the last change (3. repeats it 3 times)
@@ -277,6 +279,9 @@ the system clipboard, so Cmd-V (Ctrl-V) pastes it in other programs too."
                    (car r)))))
 
 (define (vim-paste before n)
+  ;; what another program copied since (Grammarly, a browser) comes first,
+  ;; as for C-y; text copied here is already the newest kill
+  (adopt-system-clipboard)
   (let* ((reg (if (and *vim-register* (pair? *kill-ring*) (string=? (car *vim-register*) (car *kill-ring*)))
                   *vim-register*
                   (cons (if (pair? *kill-ring*) (car *kill-ring*) (get-clipboard)) #f)))
@@ -359,7 +364,7 @@ the system clipboard, so Cmd-V (Ctrl-V) pastes it in other programs too."
                         (when (< target p) (goto-char target))   ; as vim: y moves back
                         (message "Copied"))))))))
 
-(define *editing-keys* '("x" "p" "P" "u" "C-r" "o" "O" "a" "A" "I" "." "J" "r" ":"))
+(define *editing-keys* '("x" "p" "P" "C-y" "u" "C-r" "o" "O" "a" "A" "I" "." "J" "r" ":"))
 
 (define (refused-in-read-only? key)
   "In read-only (not vim-mode), the keys that would edit say so instead."
@@ -478,6 +483,8 @@ the system clipboard, so Cmd-V (Ctrl-V) pastes it in other programs too."
             (done))))
      ((string=? key "p") (vim-paste #f n) (done))
      ((string=? key "P") (vim-paste #t n) (done))
+     ;; C-y, and Cmd-V in the window (which sends C-y): paste at the cursor
+     ((string=? key "C-y") (vim-paste #t n) (done))
      ((string=? key "u") (vim-edit (lambda () (undo))) (done))
      ((string=? key "C-r") (vim-edit (lambda () (redo))) (done))
      ((string=? key "v")
@@ -581,7 +588,7 @@ the system clipboard, so Cmd-V (Ctrl-V) pastes it in other programs too."
            (vim-key key)
            ;; named keys: arrows move (keeping a selection), the normal-mode
            ;; control keys run; anything else (C-x C-s, M-x ...) is Emacs's
-           (and (member key '("up" "down" "left" "right" "C-r" "C-d" "C-u" "C-g" "RET"))
+           (and (member key '("up" "down" "left" "right" "C-r" "C-d" "C-u" "C-g" "C-y" "RET"))
                 (vim-key (if (string=? key "RET") "\r" key)))))))
 
 (set! *modal-key-handler* 'vim-key-handler)

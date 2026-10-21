@@ -368,6 +368,7 @@ extern void disassociate_b(window_t *);
 extern void hijack_window(window_t *, buffer_t *);
 extern void restore_hijacked_window(window_t *);
 extern int getfilename(char *, char *, int);
+extern void unread_key_bytes(const char *, int);
 extern int line_edit(char *, char *, int, int, int (*)(char *, int, int, int));
 extern void display_prompt_and_response(char *, char *);
 extern void i_shell_command(void);
