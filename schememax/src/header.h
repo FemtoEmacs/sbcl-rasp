@@ -381,7 +381,7 @@ extern int call_lisp_event(char *, char *);
 extern int menu_hit(int row, int col);
 extern void fe_set_completions(char *names);
 extern void menu_press(int row, int index);
-extern int call_lisp_highlight(buffer_t *, char_t *, int, char_t *);
+extern int call_lisp_highlight(buffer_t *, point_t, char_t *, int, char_t *);
 extern void init_colors(void);
 extern int goto_screen_position(int, int);
 extern void face_on(int);

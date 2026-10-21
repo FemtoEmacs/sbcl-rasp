@@ -331,7 +331,7 @@ then of the other buffers open in the editor."
 (define *private-buffer-names*
   '("*assistant*" "*claude-request*" "*discussion*" "*codex*" "*codex-request*" "*codex-chat*"
     "*schememax-help*" "*help-options*" "*ai-options*" "*more-actions*" "*ttfy-menu*" "*ttfy-errors*"
-    "*completions*" "*buffers*" "*buffer-pick*" "*plot*"))
+    "*completions*" "*buffers*" "*buffer-pick*" "*plot*" "*tags-hidden*"))
 
 (define (other-buffers-context budget)
   "The other buffers, each under its name and file, while BUDGET bytes last;

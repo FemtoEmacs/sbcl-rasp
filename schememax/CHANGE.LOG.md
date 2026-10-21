@@ -1,5 +1,52 @@
 #Femto Emacs Change Log
 
+## 2026-10-21 — The view without tags moves with nvim's keys
+
+* The view (C-c TAB, C-c l) opens in read mode, as after C-x C-q: h j k l,
+  Enter, w b e, gg G, C-d C-u, / ? n N move, yy and v...y copy; the mode
+  line says READ.  i, a, A, I and C-x C-q return to the file at the same
+  place, to edit it there (read-only.scm: leave-normal-mode asks
+  tag-view.scm), so the view is never made editable; M-x vim-mode is
+  refused in it.
+
+## 2026-10-21 — Hidden tags keep the colours
+
+* With the tags hidden (C-c TAB, C-c l), the text keeps the colours it has
+  in the file: titles, bold, italics, links, citations and math.  The file
+  is coloured once, as HTML or LaTeX, when the tags are hidden, and each
+  piece of the view takes the colours of the text it came from (an entity
+  takes the colour around it, a "- " the symbol colour).
+* The colouring call now says where the visible text starts in the buffer
+  and which buffer it is (display.c, interface.c, hooks.c:
+  highlight-buffer-text FILE TEXT COLORS BUFFER START), so a buffer can
+  carry colours made in advance (highlight.scm, *buffer-faces*).
+* Line breaks between tags no longer pile up as blank lines in the view.
+
+## 2026-10-21 — HTML and LaTeX colours; hiding their tags
+
+* languages/html.scm (new): HTML colours, for .html .htm .xhtml .xml .svg.
+  Tags and <!DOCTYPE> keyword, attribute names digits, values string,
+  comments comment, entities digits; the text of <h1>..<h6> and <title>
+  heading, <b> <strong> strong, <i> <em> emphasis, <a> link, <code> <pre>
+  <script> <style> string.
+* languages/tex.scm: LaTeX gets a highlighter of its own (the old one
+  coloured only commands and comments): section titles heading, math ($ $$
+  \[ \( and equation, align ...) string, environment names digits, \emph
+  emphasis, \textbf strong, \cite \ref \label \url ... link.  Also for
+  .latex .ltx .cls .dtx .ins.  Markdown blocks ```html and ```latex use them.
+* extensions/tag-view.scm (new): C-c TAB hides the HTML tags, C-c l the
+  LaTeX commands, in a read-only, word-wrapped view (*tags-hidden*) in the
+  same window; the same key returns to the file.  The cursor keeps its
+  place in the text both ways.  The file is never changed.  M-x html-mode
+  and M-x latex-mode colour a file of any name as HTML or LaTeX
+  (highlight.scm, *language-overrides*).
+* display.c: the word-wrap hook gets the buffer's name when it has no file,
+  so the view can wrap; markdown.scm still refuses every other *name*.
+* tests: the TeX check now expects the coloured title; nine new checks;
+  231/231 pass.  Tried in the terminal build: the colours, both toggles, the
+  cursor back at the same byte, html-mode on a .txt file, wrapping, and
+  typing refused in the view.
+
 ## 2026-10-21 — vim mode pastes what other programs copied
 
 * read-only.scm: p and P pasted the newest kill made in Schememax, never

@@ -34,10 +34,11 @@ typedef int (*fe_eval_hook_t)(const char *expr, char *out, int outlen);
 typedef int (*fe_event_hook_t)(const char *event, const char *arg);
 
 /*
- * syntax highlighting: given the buffer's file name and LEN bytes of text,
- * fill COLORS[0..LEN-1] with one of the ID_COLOR_* values
+ * syntax highlighting: given the buffer's file and buffer names and LEN
+ * bytes of text starting at buffer offset START, fill COLORS[0..LEN-1]
+ * with one of the ID_COLOR_* values
  */
-typedef void (*fe_highlight_hook_t)(const char *fname, const char *bname,
+typedef void (*fe_highlight_hook_t)(const char *fname, const char *bname, long start,
 				    const char_t *text, int len, char_t *colors);
 
 static fe_eval_hook_t      eval_hook      = NULL;
@@ -75,11 +76,11 @@ int call_lisp_event(char *event, char *arg)
  * Ask Lisp for the colours of LEN bytes of TEXT.  Returns 0 when there is no
  * highlighter, in which case the caller uses the default colour.
  */
-int call_lisp_highlight(buffer_t *bp, char_t *text, int len, char_t *colors)
+int call_lisp_highlight(buffer_t *bp, point_t start, char_t *text, int len, char_t *colors)
 {
 	if (highlight_hook == NULL || len <= 0)
 		return 0;
-	highlight_hook(bp->b_fname, bp->b_bname, text, len, colors);
+	highlight_hook(bp->b_fname, bp->b_bname, (long) start, text, len, colors);
 	return 1;
 }
 

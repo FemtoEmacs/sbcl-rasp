@@ -123,9 +123,14 @@ in C (src/highlight.c), which runs at every redisplay."
         (string-downcase (byte-substring filename dot))
         "")))
 
+;; file name -> language name, set by M-x html-mode, latex-mode ...
+(defvar *language-overrides* (table))
+
 (define (language-for-file filename)
-  (let ((ext (file-extension (or filename ""))))
-    (or (and (> (length ext) 0)
+  (let ((ext (file-extension (or filename "")))
+        (forced (and filename (get *language-overrides* filename #f))))
+    (or (and forced (find-language forced))
+        (and (> (length ext) 0)
              (find (lambda (l) (member ext (language-extensions l))) *languages*))
         *default-language*)))
 
@@ -188,9 +193,19 @@ in C (src/highlight.c), which runs at every redisplay."
                (if (= i len) (reverse runs) (loop (+ i 1) i runs))))
             (else (loop (+ i 1) start runs))))))
 
-;;; Called from C (src/hooks.c): TEXT is a byte string, COLORS a byte array
-;;; to fill.  On any error the C side keeps its default colours.
-(define (highlight-buffer-text filename text colors)
-  (let ((lang (language-for-file filename)))
-    (when lang (highlight-octets lang text (length text) colors))
+;; buffer name -> the faces of its whole text, made in advance (a byte
+;; array): the view without tags (tag-view.scm) keeps the file's colours
+(defvar *buffer-faces* (table))
+
+;;; Called from C (src/hooks.c): TEXT is a byte string that starts at offset
+;;; START of the buffer BUFFER, COLORS a byte array to fill.  On any error
+;;; the C side keeps its default colours.
+(define (highlight-buffer-text filename text colors (buffer "") (start 0))
+  (let ((faces (get *buffer-faces* buffer #f)))
+    (if faces
+        (let ((n (length faces)))
+          (do ((i 0 (+ i 1))) ((= i (length text)))
+            (aset! colors i (if (< (+ start i) n) (aref faces (+ start i)) +alpha+))))
+        (let ((lang (language-for-file filename)))
+          (when lang (highlight-octets lang text (length text) colors))))
     #t))

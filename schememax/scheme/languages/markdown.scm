@@ -268,6 +268,12 @@ use eight-column stops; every UTF-8 character takes one cell."
 (define *word-wrap-overrides* (table))   ; filename -> #t / #f
 
 (define (word-wrap-file-p filename)
+  ;; a buffer without a file comes by its name, *scratch* and the like: only
+  ;; the view without tags (C-c TAB, C-c l) wraps
+  (cond ((string-prefix? "*" filename) (string=? filename "*tags-hidden*"))
+        (else (word-wrap-file-p- filename))))
+
+(define (word-wrap-file-p- filename)
   (if (has? *word-wrap-overrides* filename)
       (get *word-wrap-overrides* filename)
       (let ((language (language-for-file filename)))

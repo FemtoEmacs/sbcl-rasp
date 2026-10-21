@@ -22,8 +22,11 @@ static point_t wrap_row_end(buffer_t *bp, point_t start)
 	point_t size = document_size(bp), i;
 	int cols = screen_cols(), len, count;
 
+	/* a buffer without a file is known by its name (*scratch* ...) */
+	const char *key = bp->b_fname[0] ? bp->b_fname : bp->b_bname;
+
 	if (wrap_hook == NULL || cols <= 0 ||
-	    wrap_hook(bp->b_fname, NULL, 0, cols) != -1)
+	    wrap_hook(key, NULL, 0, cols) != -1)
 		return NOMARK;
 	if (start >= size) return size;
 	/* Four bytes per UTF-8 cell, plus the next character/newline. */
@@ -36,7 +39,7 @@ static point_t wrap_row_end(buffer_t *bp, point_t start)
 		capacity = len;
 	}
 	for (i = 0; i < len; ++i) text[i] = *ptr(bp, start + i);
-	count = wrap_hook(bp->b_fname, text, len, cols);
+	count = wrap_hook(key, text, len, cols);
 	return count > 0 && count <= len ? start + count : NOMARK;
 }
 
@@ -219,7 +222,7 @@ static void highlight_window(buffer_t *bp, int rows)
 
 	hl_start = start;
 	hl_len = len;
-	hl_active = call_lisp_highlight(bp, hl_text, len, hl_colors);
+	hl_active = call_lisp_highlight(bp, start, hl_text, len, hl_colors);
 }
 
 static int color_at(buffer_t *bp, char_t *p)

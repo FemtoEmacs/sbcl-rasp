@@ -45,7 +45,39 @@
 (check "Lisp block comment" (faces "#| x |# ; y" "a.lisp") '((8 . "#| x |#") (7 . "; y")))
 (check "Python triple quotes and single quotes" (faces "def f(): '''doc''' + 'x'" "a.py")
        '((4 . "def") (11 . "f") (9 . "'''doc'''") (9 . "'x'")))
-(check "TeX commands" (faces "\\section{A} % c" "a.tex") '((4 . "\\section") (7 . "% c")))
+(check "TeX commands" (faces "\\section{A} % c" "a.tex") '((4 . "\\section") (11 . "A") (7 . "% c")))
+(check "LaTeX: math, emphasis, references and environment names"
+       (faces "$x^2$ \\emph{a} \\cite{k} \\begin{itemize}" "a.tex")
+       '((9 . "$x^2$") (4 . "\\emph") (12 . "a") (4 . "\\cite") (14 . "k") (4 . "\\begin") (6 . "itemize")))
+(check "LaTeX: a math environment is coloured as math"
+       (faces "\\begin{equation}E=mc\\end{equation}" "a.tex")
+       '((4 . "\\begin") (6 . "equation") (9 . "E=mc") (4 . "\\end") (6 . "equation")))
+(check "HTML: tags, attributes, values, comments, entities"
+       (faces "<p class=\"x\">a&amp;b</p><!-- c -->" "a.html")
+       '((4 . "<p") (6 . "class") (9 . "\"x\"") (4 . ">") (6 . "&amp;") (4 . "</p>") (7 . "<!-- c -->")))
+(check "HTML: text in a heading, in bold and in a link"
+       (faces "<h1>T</h1><b>B</b><a href=\"u\">L</a>" "a.html")
+       '((4 . "<h1>") (11 . "T") (4 . "</h1><b>") (13 . "B") (4 . "</b><a") (6 . "href") (9 . "\"u\"") (4 . ">") (14 . "L") (4 . "</a>")))
+(check "HTML without tags: blocks, items and entities"
+       (call-with-values (lambda () (tags-hidden "<h1>Title</h1><p>a &amp; b</p><ul><li>one</li></ul>" html-strip))
+         (lambda (text pieces) text))
+       "Title\n\na & b\n\n- one\n")
+(check "LaTeX without commands: preamble, titles, emphasis, citations, items"
+       (call-with-values
+           (lambda () (tags-hidden "\\documentclass{article}\n\\begin{document}\n\\section{Intro}Some \\emph{new} work \\cite{k1}.% note\n\\begin{itemize}\\item one\\end{itemize}\n\\end{document}" latex-strip))
+         (lambda (text pieces) text))
+       "Intro\nSome new work [k1].\n\n- one\n")
+(check "the cursor keeps its place in the text, there and back"
+       (call-with-values (lambda () (tags-hidden "<p>Hello <b>world</b></p>" html-strip))
+         (lambda (text pieces)
+           (let ((v (tag-view-source->view pieces 12)))      ; the "w" of world
+             (list (byte-substring text v (+ v 5)) (tag-view-view->source pieces v)))))
+       '("world" 12))
+(check "C-c TAB and C-c l toggle the tags"
+       (list (key-binding "C-c TAB") (key-binding "C-c l")) '(html-toggle-tags latex-toggle-tags))
+(check "only the view without tags wraps among buffers without a file"
+       (list (word-wrap-file-p "*tags-hidden*") (word-wrap-file-p "*scratch*") (word-wrap-file-p "a.tex"))
+       '(#t #f #t))
 (check "#include is a keyword" (faces "#include <x.h>" "a.h") '((4 . "#include")))
 (check "UTF-8 text keeps byte alignment" (faces "/* café */ 7" "a.c") '((8 . "/* café */") (6 . "7")))
 (check "unknown extension: numbers and strings only" (faces "if 3 \"q\"" "README") '((6 . "3") (9 . "\"q\"")))

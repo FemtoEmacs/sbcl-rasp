@@ -80,6 +80,14 @@ C-h (or F1) shows every key on one page. The highlights:
   menu), C-x d / C-x C-d (directory browser), C-x C-g and C-x ! (grep),
   C-x s, C-x C-v, TAB completion with `*` and `?` in file prompts.
 - **Scheme:** C-x C-e, C-M-x and M-: evaluate; C-x C-r reloads the scripts.
+- **HTML and LaTeX:** both are coloured: tags, attributes and values,
+  comments, entities, and the text of headings, bold, italics and links;
+  LaTeX commands, section titles, math, environment names, emphasis and
+  references. C-c TAB hides the HTML tags and C-c l the LaTeX commands:
+  the text appears in the same window, read-only and word-wrapped, with
+  the cursor where it was; the same key brings back the file, the cursor
+  at the same place in the text. M-x html-mode and M-x latex-mode colour
+  a file with another extension as HTML or LaTeX.
 - **Shell:** M-! opens a window for a command (Enter: more lines); C-c s
   runs it and shows the output below the command.
 - **Prompts (the minibuffer):** the answer to every prompt (C-x C-w,

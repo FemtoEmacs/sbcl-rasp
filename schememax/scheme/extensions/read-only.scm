@@ -71,6 +71,13 @@
                "READ: hjkl, gg, G, / move; yy and v...y copy; i or C-x C-q edits; C-h lists all")))
 
 (define (leave-normal-mode (why "Emacs mode: the buffer can be edited"))
+  ;; the view without tags (tag-view.scm) is never edited: i, a, C-x C-q ...
+  ;; go back to the file, at the same place, to edit it there
+  (if (and (bound? 'tag-view-p) (tag-view-p))
+      (tag-view-leave)
+      (leave-normal-mode- why)))
+
+(define (leave-normal-mode- why)
   (table-remove! *vim-states* (get-buffer-name))
   (table-remove! *vim-kinds* (get-buffer-name))
   (set-buffer-read-only! #f)
@@ -83,6 +90,8 @@
   "Enter mode KIND; in it already: back to Emacs; in the other one: switch."
   (cond ((and (bound? 'help-page-p) (help-page-p))
          (message "The help page stays read-only: i or [CLOSE] closes it"))
+        ((and (bound? 'tag-view-p) (tag-view-p) (eq? kind 'vim))
+         (message "This view is read-only: i returns to the file, to edit it"))
         ((not (vim-active?)) (enter-normal-mode kind))
         ((eq? (vim-kind) kind) (leave-normal-mode))
         (else (enter-normal-mode kind))))

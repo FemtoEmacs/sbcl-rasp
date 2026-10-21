@@ -6,7 +6,7 @@
  *
  *   evaluate   Esc-; and Esc-]            (scheme_eval, flcall.c)
  *   event      keys, commands, clicks     (editor-event kind arg)
- *   highlight  faces for visible text     (highlight-buffer-text file text colors)
+ *   highlight  faces for visible text     (highlight-buffer-text file text colors buffer start)
  *   modeline   each window's mode line    (mode-line-pieces name file buffer line flags cols)
  *   change     every change to a text     (record-change id kind pos text)
  *   wrap       visual rows of prose       (markdown-wrap-row file text cols)
@@ -22,7 +22,7 @@
 extern char *scheme_eval(char *);
 extern int scheme_error;
 extern void fe_message(char *);
-extern void fe_set_hooks(int (*)(const char *, char *, int), int (*)(const char *, const char *), void (*)(const char *, const char *, const unsigned char *, int, unsigned char *));
+extern void fe_set_hooks(int (*)(const char *, char *, int), int (*)(const char *, const char *), void (*)(const char *, const char *, long, const unsigned char *, int, unsigned char *));
 extern void fe_set_modeline_hook(int (*)(const char *, const char *, const char *, int, int, int, char *, int));
 extern void fe_set_change_hook(void (*)(long, int, long, const unsigned char *, long));
 extern void fe_set_wrap_hook(int (*)(const char *, const unsigned char *, int, int));
@@ -104,22 +104,23 @@ static void changed(long id, int kind, long pos, const unsigned char *text, long
 	fl_free_gc_handles(1);
 }
 
-/* faces for N bytes of S; on any error the default face stays */
-static void highlight(const char *file, const char *buffer, const unsigned char *s, int n,
-		      unsigned char *colors)
+/* faces for N bytes of S, which start at offset START of the buffer; on
+ * any error the default face stays */
+static void highlight(const char *file, const char *buffer, long start,
+		      const unsigned char *s, int n, unsigned char *colors)
 {
-	value_t f = FL_NIL, t = FL_NIL, c = FL_NIL;
-	(void) buffer;
+	value_t f = FL_NIL, t = FL_NIL, c = FL_NIL, b = FL_NIL;
 	memset(colors, 5, (size_t) n);
-	fl_gc_handle(&f); fl_gc_handle(&t); fl_gc_handle(&c);
+	fl_gc_handle(&f); fl_gc_handle(&t); fl_gc_handle(&c); fl_gc_handle(&b);
 	FL_TRY_EXTERN {
 		f = bytes(file ? file : "", file ? strlen(file) : 0);
 		t = bytes(s, (size_t) n);
 		c = cvalue_from_data(get_array_type(uint8sym), colors, (size_t) n);
-		(void) fl_applyn(3, procedure("highlight-buffer-text"), f, t, c);
+		b = bytes(buffer ? buffer : "", buffer ? strlen(buffer) : 0);
+		(void) fl_applyn(5, procedure("highlight-buffer-text"), f, t, c, b, fixnum(start));
 		memcpy(colors, cvalue_data(c), (size_t) n);
 	} FL_CATCH_EXTERN { }
-	fl_free_gc_handles(3);
+	fl_free_gc_handles(4);
 }
 
 /* bytes in the first visual row of TEXT; -1 "this file wraps"; 0 no wrapping */
