@@ -369,6 +369,9 @@ extern void hijack_window(window_t *, buffer_t *);
 extern void restore_hijacked_window(window_t *);
 extern int getfilename(char *, char *, int);
 extern void unread_key_bytes(const char *, int);
+extern void scroll_window(int);
+extern int select_screen_window(int);
+#define WHEEL_ROWS 3            /* rows the text moves for a notch of the wheel */
 extern int line_edit(char *, char *, int, int, int (*)(char *, int, int, int));
 extern void display_prompt_and_response(char *, char *);
 extern void i_shell_command(void);

@@ -850,6 +850,27 @@ void b2w_all_windows(buffer_t *bp)
  * mouse click).  Clicking in another window selects it.  The walk mirrors
  * the painting loop in display().
  */
+/* select the window shown at screen ROW (its text or its mode line),
+ * without moving any cursor; FALSE when no window is there */
+int select_screen_window(int row)
+{
+	window_t *wp;
+
+	for (wp = wheadp; wp != NULL; wp = wp->w_next)
+		if (row >= wp->w_top && row <= wp->w_top + wp->w_rows)
+			break;
+	if (wp == NULL)
+		return FALSE;
+	if (wp != curwp) {
+		curwp->w_update = TRUE;
+		curwp = wp;
+		curbp = wp->w_bufp;
+		if (curbp->b_cnt > 1)
+			w2b(curwp);
+	}
+	return TRUE;
+}
+
 int goto_screen_position(int row, int col)
 {
 	window_t *wp;

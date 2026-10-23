@@ -864,6 +864,20 @@ static void handle(SDL_Event *e)
 		if (e->button.button == SDL_BUTTON_LEFT)
 			push_mouse(0, e->button.x, e->button.y, 1);
 		break;
+	case SDL_MOUSEWHEEL: {
+		/*
+		 * The wheel, as a terminal reports it: button 64 up, 65 down,
+		 * one report a notch, at the pointer.  The direction is the
+		 * system's (natural scrolling on a Mac included).
+		 */
+		int x, y, notches = e->wheel.y, i;
+		SDL_GetMouseState(&x, &y);
+		if (notches > 5) notches = 5;
+		if (notches < -5) notches = -5;
+		for (i = 0; i < (notches < 0 ? -notches : notches); i++)
+			push_mouse(notches > 0 ? 64 : 65, x, y, 0);
+		break;
+	}
 	}
 }
 

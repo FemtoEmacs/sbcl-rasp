@@ -1,5 +1,22 @@
 #Femto Emacs Change Log
 
+## 2026-10-22 — The mouse wheel scrolls
+
+* command.c: the wheel scrolls the window under the pointer, 3 rows a notch
+  (WHEEL_ROWS, header.h), in both directions (scroll_window).  The cursor
+  stays put while it is visible; otherwise it moves to the nearest visible
+  row, as in Emacs.  Scrolling stops at the top and with the last line at
+  the top of the window.  Before, the terminal's wheel reports were read
+  and ignored.
+* display.c: select_screen_window chooses the window under the pointer
+  without moving its cursor.
+* gui.c: the window build turns SDL's wheel events into the same reports
+  (one a notch, at the pointer), in the system's direction (natural
+  scrolling on a Mac included).
+* Tried in the terminal build with the reports a terminal sends: down,
+  up, a visible cursor kept, the cursor pushed off the bottom, the top and
+  the end of the file.  231/231 checks pass; gui.c compiles against SDL.
+
 ## 2026-10-21 — The view without tags moves with nvim's keys
 
 * The view (C-c TAB, C-c l) opens in read mode, as after C-x C-q: h j k l,

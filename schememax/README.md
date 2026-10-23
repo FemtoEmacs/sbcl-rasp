@@ -99,6 +99,10 @@ C-h (or F1) shows every key on one page. The highlights:
 
 ## Menus
 
+The mouse wheel scrolls the window under the pointer, 3 rows a notch; the
+cursor stays where it is while it is visible, and otherwise moves to the
+nearest visible row. A click moves the cursor, a drag selects.
+
 Every mode line is a menu the mouse can click:
 `file.py, L. 12 [?][SAVE][UNDO][Select][MORE][TTFY]   [QUIT]`. With text
 selected, Select becomes COPY and DELETE. A narrow window drops buttons

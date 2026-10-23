@@ -109,7 +109,7 @@ void down()
  * The mouse (get_key has decoded the event into mouse_*): pressing the
  * left button moves the cursor there, selecting the window clicked in;
  * dragging selects a region, which stays active after the release.  The
- * wheel is ignored.
+ * wheel scrolls the window under the pointer (scroll_window).
  */
 static int mouse_dragging = 0;
 static int mouse_moved = 0;
@@ -122,8 +122,11 @@ void editor_mouse_event()
 {
 	int b = mouse_button;
 
-	if (b & 64)                     /* wheel */
+	if (b & 64) {                   /* wheel: 64 up, 65 down (66, 67 sideways) */
+		if ((b & 3) < 2 && select_screen_window(mouse_row))
+			scroll_window((b & 1) ? WHEEL_ROWS : -WHEEL_ROWS);
 		return;
+	}
 	if (menu_down_index >= 0 && (mouse_release || (b & 32))) {
 		/*
 		 * A button of the mode line menu acts when it is released, as
@@ -231,6 +234,50 @@ void backward_word()
 		--curbp->b_point;
 	while (isspace(*(p = ptr(curbp, curbp->b_point))) && curbp->b_buf < p)
 		--curbp->b_point;
+}
+
+/*
+ * Scroll the current window N screen rows: N > 0 shows text further down
+ * (the text moves up), N < 0 text further up.  The cursor stays where it
+ * is while it is visible; when it would leave the window it goes to the
+ * nearest visible row, as in Emacs.  The text stops at its last row.
+ */
+void scroll_window(int n)
+{
+	point_t size = document_size(curbp);
+	point_t page = curbp->b_page;
+	int rows = curwp->w_rows;
+
+	if (rows < 2)
+		return;
+	if (n > rows - 1) n = rows - 1;
+	if (n < -(rows - 1)) n = -(rows - 1);
+	for (; n > 0; n--) {            /* down the text */
+		point_t next = dndn(curbp, page);
+		if (next <= page || next >= size)
+			break;
+		page = next;
+	}
+	for (; n < 0 && page > 0; n++)  /* up the text */
+		page = upup(curbp, page);
+	curbp->b_page = page;
+
+	if (curbp->b_point < page) {
+		curbp->b_point = page;  /* the cursor was above the window */
+	} else {
+		/* the start of the last visible row, and of the row after it */
+		point_t last = page, after;
+		int i;
+		for (i = 1; i < rows; i++) {
+			point_t next = dndn(curbp, last);
+			if (next <= last || next >= size) break;
+			last = next;
+		}
+		after = dndn(curbp, last);
+		if (after > last && after < size && curbp->b_point >= after)
+			curbp->b_point = last;  /* below the window */
+	}
+	curwp->w_update = TRUE;
 }
 
 void forward_page()
