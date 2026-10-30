@@ -1,7 +1,7 @@
-# Schememax: SBEmacs with C-owned femtoscheme
+# Schememax: native editor with compiled Scheme
 
 The C core owns `main()`, startup, the event loop and both screen backends
-(terminal and window). It starts an embedded femtoscheme VM, loads
+(terminal and window). It starts the bundled compatibility VM and Wasmtime compiled backend, loads
 `scheme/init.scm`, and calls Scheme for every key, click, typed character and
 change to the text. Everything else -- key bindings, editing commands,
 indentation, highlighting rules, undo, menus, help, the shell window and the
@@ -28,8 +28,43 @@ SDL2_ttf. The Scheme runtime is bundled source: no Scheme installation or
 package manager is needed. `make` builds the window version when its
 libraries are found through pkg-config.
 
-Keep the executable beside the `scheme/`, `femtoscheme/` and `ttfy/`
+Keep the executable beside the `scheme/`, `schemer/`, `runtime/`, `femtoscheme/` and `ttfy/`
 folders; `make app` copies them into Schememax.app.
+
+## Compiled Scheme runtime
+
+Schememax now executes compatible Scheme through Schemer and the embedded
+Wasmtime C API. No Node.js, JavaScript engine or browser is used. `C-x C-e`,
+`C-M-x`, `M-:` and `--eval` use the compiler for compatible code. Procedure
+definitions persist, so defining `fib` and then evaluating `(time (fib 40))`
+runs compiled recursion. Compatible editing commands compile on first use.
+`M-x schemer-status` reports compilation and editor-callback counts.
+
+The compiler and old editor dialect are not fully compatible. Legacy macros,
+ports, shared mutable objects and higher-order native callbacks retain
+compatibility handlers. The compiler itself is self-hosted WasmGC and does
+not use the interpreter. The editor core still uses the interpreter; it has
+not been removed. `SCHEMEMAX_SCHEME=legacy ./schememax` temporarily
+selects the interpreter for comparison or troubleshooting.
+
+The first `make` downloads a checksum-verified Wasmtime 50.0.1 C SDK using
+curl and tar (unzip under Windows/MSYS2). `make fetch-wasmtime` downloads it
+separately. To build offline, unpack that SDK into `runtime/wasmtime`, or set
+`WASMTIME_ROOT`. End users of a packaged editor need no compiler or download.
+The Apple Silicon runtime library is about 22.4 MiB; the development SDK also
+includes headers and a larger static library. Keep `runtime/wasmtime/lib`
+beside the executable; `make app` includes the library, compiled compiler seed and standalone driver.
+
+Wasmtime supplies native SDKs for Linux, macOS and Windows. This integration
+was tested on Apple Silicon macOS. The existing editor's terminal, GUI and
+process code still needs its platform-specific build support: selecting a
+portable Scheme runtime alone does not port that C code to Windows.
+
+`make check` now includes ten compiler fixture suites and native bridge
+checks. `make check-ui` verifies search and mock assistant protocols without
+contacting live services. `make check-selfhost` verifies byte-identical compiler self-rebuilding without
+interpreter linkage. Native backend details are in
+[schemer/README.md](schemer/README.md).
 
 ## Layout
 
@@ -62,6 +97,15 @@ and extensions in `~/.schememax/languages/*.scm` and
 
 `SCHEMEMAX_NO_INIT=1` skips your files. A script that fails to load is
 reported on the message line at start-up; the others still load.
+
+## Filename prompts
+
+`C-x C-f` starts with an editable folder path, initially the working folder,
+with the home directory abbreviated as `~`. Append a filename or edit/erase
+the prefix; TAB still completes names. Accepted file prompts remember their
+folder for the session. Cancelling preserves that folder, and changing the
+process working directory resets the starting folder to the new directory.
+This applies to both the terminal and native GUI.
 
 ## Keys
 
@@ -223,3 +267,16 @@ motion keys move on it, and i (or [CLOSE]) closes it.
 C-s searches forward and C-r backward as you type; repeat them for the
 next or previous match. Enter accepts; C-g cancels and returns. M-%
 replaces, asking each time. Search is literal and case-sensitive.
+
+`C-x C-w` (Save As) prefills the full current filename as an editable
+path, abbreviating home as `~`, and TAB completes directories and filenames.
+For unnamed buffers it starts at the normal remembered folder. Cancelling
+preserves the current filename and does not save a file.
+
+Shell commands in the `M-!` / `C-x @` window now support Tab completion
+at the cursor, preserving any command text after it. Tab expands a common
+prefix and repeated Tab cycles through ambiguous matches; paths with spaces
+and Unicode are supported. `C-c m` opens a one-line minibuffer command with
+Tab completion, Enter to run and `C-g` to cancel. Completion never executes
+the command. Native Schememax and the local Browsered launcher continue to
+run the full system shell.

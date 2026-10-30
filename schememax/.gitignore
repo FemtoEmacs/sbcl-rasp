@@ -24,3 +24,13 @@ ttfy/benedetto.md
 ttfy/codex-tests/
 ttfy/rama/
 ttfy/rama.zip
+
+# Native compiled Scheme SDK and test runner
+/runtime/
+/tests/native-host-test
+
+/tests/fileprompt-test
+
+/tests/filename-completion-test
+
+/schemer-compile

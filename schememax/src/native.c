@@ -548,4 +548,5 @@ extern void assistant_init(void);
 extern void extra_init(void);
 extern void primitives_init(void);
 extern void highlight_init(void);
-void interface_init(void) { assign_global_builtins(editor_builtins); assistant_init(); extra_init(); primitives_init(); highlight_init(); }
+extern void compiled_init(void);
+void interface_init(void) { compiled_init(); assign_global_builtins(editor_builtins); assistant_init(); extra_init(); primitives_init(); highlight_init(); }

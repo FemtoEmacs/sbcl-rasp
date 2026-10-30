@@ -15,9 +15,24 @@ static char result[8192];
 
 char *scheme_eval(char *expr)
 {
-    char *source = malloc(strlen(expr) + 128);
+    int compiled = symbol_value(symbol("schemer-eval-string")) != UNBOUND &&
+                   symbol_value(symbol("*schemer-enabled*")) != FL_F;
+    char *source = malloc(strlen(expr) * 2 + 256);
     if (!source) { scheme_error = 1; return "Out of memory"; }
-    sprintf(source, "(let ((b (open-output-string))) (write (begin %s) b) (get-output-string b))", expr);
+    if (compiled) {
+        char *quoted = malloc(strlen(expr) * 2 + 1), *q = quoted;
+        if (!quoted) { free(source); scheme_error=1; return "Out of memory"; }
+        for (const unsigned char *p=(const unsigned char *)expr; *p; p++) {
+            if (*p=='\\' || *p=='"') { *q++='\\'; *q++=*p; }
+            else if (*p=='\n') { *q++='\\'; *q++='n'; }
+            else if (*p=='\r') { *q++='\\'; *q++='r'; }
+            else if (*p=='\t') { *q++='\\'; *q++='t'; }
+            else *q++=*p;
+        }
+        *q=0;
+        sprintf(source, "(let ((b (open-output-string))) (write (schemer-eval-string \"%s\") b) (get-output-string b))", quoted);
+        free(quoted);
+    } else sprintf(source, "(let ((b (open-output-string))) (write (begin %s) b) (get-output-string b))", expr);
     scheme_error = 0;
     value_t port = FL_NIL, value = FL_NIL;
     fl_gc_handle(&port);
