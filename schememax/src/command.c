@@ -1075,5 +1075,7 @@ void eval_block() {
 
 void resize_terminal()
 {
-	one_window(curwp);
+	/* the windows keep their share of the new size (window.c) */
+	relayout_windows();
+	screen_clear();
 }

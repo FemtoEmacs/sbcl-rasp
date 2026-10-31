@@ -1,8 +1,17 @@
 # Native Schemer backend
 
-Schemer is the user's Chez-inspired compiler, vendored on 2026-10-30.
-It compiles Scheme to WasmGC. The native backend embeds Wasmtime 50.0.1
-through its C API; no Node.js, JavaScript engine or browser is used.
+Schemer is the user's Chez-inspired compiler, vendored on 2026-10-30 and
+brought up to date on 2026-10-31 with ~/claude-sandbox/schemer: records
+(R6RS, R7RS and Chez forms), libraries (`library`, `define-library`,
+import sets), `syntax-case`, and `%mem-u8` for code that reads the
+browser editor's memory. It compiles Scheme to WasmGC. The native backend
+embeds Wasmtime 50.0.1 through its C API; no Node.js, JavaScript engine or
+browser is used.
+
+Schememax and Browsered carry the same Schemer: prelude.scm, expand.scm,
+compiler.scm, link.scm, wasm.scm and the helper files are identical, and
+so is compiler.wasm, byte for byte (the seed this host builds is the seed
+Browsered's builds). Update both together, and compare their md5 sums.
 
 ## Self-hosted compiler
 

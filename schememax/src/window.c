@@ -272,3 +272,50 @@ void enlarge_window()
 	}
 	mark_all_windows();
 }
+
+/*
+ * The screen changed size (a terminal or window resize): the windows keep
+ * their share of the rows, as in Emacs.  Femto made a single window here,
+ * which lost the windows of C-x 2 at every resize.  A window that gets
+ * shorter scrolls so that its cursor stays in view.  Only if the screen
+ * becomes too short for every window to keep a row of text do the last
+ * ones go, never the selected one.
+ */
+void relayout_windows(void)
+{
+	window_t *wp, *last, *prev;
+	int old = 0, avail = screen_rows() - 1, n = 0, top = 0, left, k = 0;
+
+	if (wheadp == NULL || curwp == NULL) return;
+	for (wp = wheadp; wp != NULL; wp = wp->w_next) { old += wp->w_rows + 1; n++; }
+	/* each window needs a row of text and its mode line */
+	while (n > 1 && avail < 2 * n) {
+		last = NULL;
+		for (wp = wheadp; wp != NULL; wp = wp->w_next)
+			if (wp != curwp) last = wp;
+		if (last == NULL) break;
+		prev = NULL;
+		for (wp = wheadp; wp != NULL && wp != last; wp = wp->w_next) prev = wp;
+		if (prev) prev->w_next = last->w_next; else wheadp = last->w_next;
+		old -= last->w_rows + 1;
+		n--;
+	}
+	if (old <= 0) old = 1;
+	left = avail;
+	for (wp = wheadp; wp != NULL; wp = wp->w_next, k++) {
+		int share = wp->w_next == NULL ? left : (int) ((long) (wp->w_rows + 1) * avail / old);
+		if (share < 2) share = 2;
+		if (share > left - 2 * (n - k - 1)) share = left - 2 * (n - k - 1);
+		if (share - 1 < wp->w_rows) {
+			wp->w_epage = wp->w_page;
+			/* the selected window's live values are its buffer's */
+			if (wp == curwp) wp->w_bufp->b_epage = wp->w_bufp->b_page;
+		}
+		wp->w_top = top;
+		wp->w_rows = share - 1;
+		wp->w_update = TRUE;
+		top += share;
+		left -= share;
+	}
+	mark_all_windows();
+}

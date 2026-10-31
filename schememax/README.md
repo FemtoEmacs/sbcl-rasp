@@ -132,8 +132,10 @@ C-h (or F1) shows every key on one page. The highlights:
   the cursor where it was; the same key brings back the file, the cursor
   at the same place in the text. M-x html-mode and M-x latex-mode colour
   a file with another extension as HTML or LaTeX.
-- **Shell:** M-! opens a window for a command (Enter: more lines); C-c s
-  runs it and shows the output below the command.
+- **Shell:** M-! (or C-x @) opens a window for a command (Enter: more
+  lines); C-c s runs it and shows the output below the command. C-c q (or
+  [CLOSE]) closes it and goes back to the file that called it; if there
+  were two windows, both stay as they were.
 - **Prompts (the minibuffer):** the answer to every prompt (C-x C-w,
   C-x C-f, M-x, M-:, query-replace ...) can be edited anywhere: left and
   right (C-b, C-f), C-left and C-right (M-b, M-f) by words, Home and End
@@ -164,7 +166,8 @@ C-c r asks Claude and C-c g asks Codex (ChatGPT). Each offers **h** hints
 about the code at the cursor, **q** a question written in a window of its
 own (the same key sends it), or **d** a discussion that stays open. C-c y
 inserts the code of an answer, after asking; in a discussion, C-c t inserts
-the snippet under the cursor. Their windows have buttons instead of [?]:
+the snippet under the cursor. C-c q (or [CLOSE]) closes the assistant's
+window and leaves the other windows as they were. Their windows have buttons instead of [?]:
 [SEND][TANGLE][CLOSE] in a question or a discussion, [TANGLE][CLOSE] under
 an answer; [TANGLE] is C-y's insert (C-c t in a discussion). Besides the
 file with the cursor, the assistants are sent every other buffer open in

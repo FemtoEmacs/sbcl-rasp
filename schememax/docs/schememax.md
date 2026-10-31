@@ -91,6 +91,18 @@
 | `C-c r`   | call Claude             |
 | `C-c y`   | insert Claude’s code    |
 | `C-c g`   | call Codex/ChatGPT      |
+| `C-c q`   | close AI or shell window|
+
+## Code
+
+```Scheme
+(define (fib n)
+  (if (< n 2) 1
+      (+ (fib (- n 2))
+         (fib (- n 1))) ))      ; end of def
+
+```
+
 
 # The commands in detail
 
@@ -207,7 +219,9 @@ down and press `x`, then `κ`
 > if one types `ls` at the prompt, the computer
 > will list the current folder.
 > It is possible to use any other shell command
-> just like the `ls` example.
+> just like the `ls` example.  
+> `C-c q` – close the shell window and go back to the file
+> that called it; if there were two windows, both stay as they were.
 
 ### Window commands.
 
@@ -224,6 +238,8 @@ find commands that cope with this situation.
     > selected initially, so repeated use quickly alternates between two buffers.  
     > `C-x n` – next buffer.  
     > `C-x C-n` – next buffer. Same as above.  
+    > `C-x` `→` – next buffer, as in Emacs (`Ctrl-x`, then the right arrow).  
+    > `C-x` `←` – previous buffer (`Ctrl-x`, then the left arrow).  
     > `C-x C-b` – list buffers.  
     > `C-x k` – kill current buffer.  
     > `C-x =` – cursor position.  
@@ -580,6 +596,7 @@ The region is shaded.
     M-:          evaluate an expression typed at the bottom
     M-]          evaluate the block and insert the value
     M-!          a window for a shell command; C-c s runs it
+    C-c q        close the shell's or assistant's window, as [CLOSE]
     C-x C-r      reload the Lisp scripts (no rebuild needed)
     C-c r        Claude: hints, a question or a discussion
     C-c y        insert the code of the last answer
@@ -596,12 +613,14 @@ the lines again as the system expects (with `\` at the end of
 each line on Linux and the Macintosh). `C-c s` runs the command
 in the folder of her file. The window then shows the command and,
 below it, what the command printed; if it failed, its exit status
-too. `C-x 1` closes the window. Its status line has two
-buttons, so Nia can click instead of typing:
+too. `C-c q` (or `C-x 1` in it) closes the window and returns to the
+file that called it; if there were two windows, both come back as they
+were. Its status line has two buttons, so Nia can click instead of
+typing:
 
 > 
 > 
->     SBEmacs: *shell-command*, L. 1 == [SEND - C-c s] [CLOSE - C-x 1]
+>     SBEmacs: *shell-command*, L. 1 == [SEND - C-c s] [CLOSE - C-c q]
 
 # Installation
 
@@ -1373,7 +1392,8 @@ Each such block is a snippet. The `C-c y` command inserts all
 the snippets of the last answer at the cursor of Nia’s file, after
 asking, and closes the answer window. It works from the file
 window and from the answer window. If Nia does not want the code,
-`C-x 1` closes the answer window.
+`C-c q` (or [CLOSE]) closes the answer window; the other windows stay
+as they were.
 
 ### Discussion.
 
@@ -1549,7 +1569,7 @@ macros. The terminal and GUI versions use the same Lisp callbacks.
 Install Nim and make sure its `nim` command is on the path seen by
 SBEmacs. Press `M-!`, type `nim --version` and press
 `C-c s` or click SEND. The lower window displays the compiler
-version. `C-x 1` returns to the file. If macOS blocks a downloaded
+version. `C-c q` returns to the file. If macOS blocks a downloaded
 Nim executable, approve the trusted compiler with Open Anyway in System
 Settings, Privacy & Security.
 
@@ -1609,7 +1629,7 @@ For `hi.nim`, enter `Edward` at
 
 The command runs in the source file’s directory. Compiler diagnostics
 and program output appear below the source; a failed command also shows
-its exit status. `C-x 1` closes the output window and returns to
+its exit status. `C-c q` closes the output window and returns to
 the source. Edit and use Run again to test the changed program.
 
 ### Using the shell.
